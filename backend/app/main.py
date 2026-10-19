@@ -10,16 +10,31 @@ from app.api.imports import router as imports_router
 from app.api.learning import router as learning_router
 from app.api.questions import router as questions_router
 from app.api.rag import router as rag_router
+from app.api.reading import router as reading_router
 from app.api.textbooks import router as textbooks_router
 from app.config import settings
 from app.database import Base, engine
+from app.services.schema_upgrades import READING_TABLE_NAMES, apply_schema_upgrades
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings.upload_path.mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(bind=engine)
-    yield
+    Base.metadata.create_all(bind=engine, tables=[
+        table for table in Base.metadata.sorted_tables if table.name not in READING_TABLE_NAMES
+    ])
+    apply_schema_upgrades(engine)
+    if settings.local_mode:
+        from app.services.import_dispatch import recover_interrupted_imports
+
+        recover_interrupted_imports()
+    try:
+        yield
+    finally:
+        if settings.local_mode:
+            from app.services.import_dispatch import shutdown_local_imports
+
+            shutdown_local_imports()
 
 
 app = FastAPI(
@@ -41,6 +56,7 @@ app.include_router(imports_router, prefix=settings.api_prefix)
 app.include_router(questions_router, prefix=settings.api_prefix)
 app.include_router(exams_router, prefix=settings.api_prefix)
 app.include_router(learning_router, prefix=settings.api_prefix)
+app.include_router(reading_router, prefix=settings.api_prefix)
 app.include_router(rag_router, prefix=settings.api_prefix)
 
 

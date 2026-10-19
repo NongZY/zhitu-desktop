@@ -1,10 +1,13 @@
+import { isAxiosError } from 'axios'
 import { http, normalizePage } from './http'
 import type {
   AuthResponse,
   Chapter,
+  ChapterContent,
   DashboardSummary,
   ExamGeneratePayload,
   ExamHistoryItem,
+  ExamRecordDetail,
   ExamPaper,
   ExamResult,
   ExamSubmitPayload,
@@ -12,8 +15,10 @@ import type {
   LearningPath,
   LoginPayload,
   KnowledgePoint,
+  KnowledgePointDetail,
   MasteryItem,
   PageResult,
+  PageSearchItem,
   Question,
   QuestionPayload,
   QuestionQuery,
@@ -21,6 +26,10 @@ import type {
   RagAnswer,
   RagAskPayload,
   RegisterPayload,
+  ReaderMetadata,
+  ReadingProgress,
+  ReadingProgressPayload,
+  ReadingHome,
   Textbook,
   TextbookStructure,
   User,
@@ -40,6 +49,36 @@ export const authApi = {
 }
 
 export const textbookApi = {
+  async reader(id: string | number, signal?: AbortSignal) {
+    return (await http.get<ReaderMetadata>(`/textbooks/${id}/reader`, { signal })).data
+  },
+  async searchPages(id: string | number, params: {
+    q: string; chapter_id?: string | number; page?: number; page_size?: number
+  }, signal?: AbortSignal) {
+    return (await http.get<PageResult<PageSearchItem>>(`/textbooks/${id}/search`, { params, signal })).data
+  },
+  async pageImage(id: string | number, pageNumber: number, signal?: AbortSignal) {
+    try {
+      return (await http.get<Blob>(`/textbooks/${id}/pages/${pageNumber}/image`, {
+        responseType: 'blob', signal,
+      })).data
+    } catch (error) {
+      if (isAxiosError(error) && error.response?.data instanceof Blob) {
+        try {
+          error.response.data = JSON.parse(await error.response.data.text())
+        } catch { /* A non-JSON error uses the normal request failure message. */ }
+      }
+      throw error
+    }
+  },
+  async recognizeOutline(id: string | number) {
+    return (await http.post<{ added: number; message: string }>(`/textbooks/${id}/outline`)).data
+  },
+  async chapterContent(id: string | number, page = 1) {
+    return (await http.get<PageResult<ChapterContent>>(`/chapters/${id}/content`, {
+      params: { page, page_size: 10 },
+    })).data
+  },
   async list() {
     const { data } = await http.get<Textbook[] | PageResult<Textbook>>('/textbooks')
     const page = normalizePage(data)
@@ -87,6 +126,18 @@ export const textbookApi = {
         },
       })
     ).data
+  },
+}
+
+export const readingApi = {
+  async getProgress(bookId: number, signal?: AbortSignal) {
+    return (await http.get<{ progress: ReadingProgress | null }>(`/learning/reading-progress/${bookId}`, { signal })).data
+  },
+  async saveProgress(bookId: number, payload: ReadingProgressPayload, signal?: AbortSignal) {
+    return (await http.put<ReadingProgress>(`/learning/reading-progress/${bookId}`, payload, { signal })).data
+  },
+  async home(signal?: AbortSignal) {
+    return (await http.get<ReadingHome>('/learning/home', { signal })).data
   },
 }
 
@@ -146,6 +197,15 @@ export const learningApi = {
   async exams() {
     return (await http.get<{ items: ExamHistoryItem[]; total: number }>('/learning/exams')).data
   },
+  async historyPage(params: { page?: number; page_size?: number } = {}) {
+    return (await http.get<PageResult<ExamHistoryItem>>('/learning/exams', { params })).data
+  },
+  async examDetail(id: string | number) {
+    return (await http.get<ExamRecordDetail>(`/learning/exams/${id}`)).data
+  },
+  async knowledgePointDetail(id: string | number) {
+    return (await http.get<KnowledgePointDetail>(`/learning/knowledge-points/${id}`)).data
+  },
 }
 
 export const ragApi = {
@@ -191,6 +251,7 @@ interface RawDashboard {
   mastery_average?: number
   weak_points?: Array<Record<string, unknown>>
   wrong_question_count?: number
+  weak_point_count?: number
   textbook_count?: number
   completed_exam_count?: number
   average_score?: number
@@ -267,6 +328,9 @@ function normalizeWrongQuestion(raw: WrongQuestion): WrongQuestion {
       stem: raw.stem || '题目内容不可用',
       type: raw.question_type || 'single_choice',
       difficulty: Number(raw.difficulty || 1),
+      textbook_id: raw.textbook_id,
+      chapter_id: raw.chapter_id,
+      knowledge_point_id: raw.knowledge_point_id,
     },
   }
 }
@@ -280,7 +344,7 @@ function normalizeDashboard(raw: RawDashboard): DashboardSummary {
     average_score: Number(raw.average_score ?? averageRate * 100),
     study_minutes: Number(raw.study_minutes ?? 0),
     mastery_average: Number(raw.mastery_average ?? 0),
-    weak_point_count: Number(raw.wrong_question_count ?? weakPoints.filter((item) => item.mastery < 0.8).length),
+    weak_point_count: Number(raw.weak_point_count ?? weakPoints.filter((item) => item.mastery < 0.8).length),
     recent_exams: raw.recent_exams,
     weekly_activity: raw.weekly_activity,
     recommendations: raw.recommendations ?? weakPoints.slice(0, 3).map((item) => ({
@@ -302,7 +366,7 @@ function normalizeExamResult(raw: ExamResult): ExamResult {
       question_id: item.question_id,
       correct: item.is_correct,
       score: item.score,
-      max_score: item.score,
+      max_score: item.max_score ?? 0,
       correct_answer: item.correct_answer as QuestionResult['correct_answer'],
       analysis: item.explanation,
     })),

@@ -27,12 +27,12 @@ const mobileMenu = ref(false)
 
 const items = [
   { path: '/dashboard', label: '学习总览', icon: HomeFilled },
-  { path: '/textbooks', label: '教材中心', icon: Reading },
-  { path: '/questions', label: '智能题库', icon: Tickets },
-  { path: '/exam/generate', label: '智能组卷', icon: DocumentChecked },
-  { path: '/results', label: '成绩与错题', icon: DataAnalysis },
-  { path: '/rag', label: '教材问答', icon: ChatDotRound },
-  { path: '/learning', label: '学习路径', icon: TrendCharts },
+  { path: '/textbooks', label: '我的课本', icon: Reading },
+  { path: '/questions', label: '我的题库', icon: Tickets },
+  { path: '/exam/generate', label: '做练习', icon: DocumentChecked },
+  { path: '/results', label: '学习记录', icon: DataAnalysis },
+  { path: '/rag', label: '问一问', icon: ChatDotRound },
+  { path: '/learning', label: '学习进度', icon: TrendCharts },
 ]
 
 const activePath = computed(() => {
@@ -41,7 +41,6 @@ const activePath = computed(() => {
 })
 
 const initials = computed(() => (auth.user?.name || auth.user?.email || '学').slice(0, 1).toUpperCase())
-const roleLabel = computed(() => ({ student: '学生', teacher: '教师', admin: '管理员' })[auth.user?.role || 'student'])
 
 function navigate(path: string) {
   mobileMenu.value = false
@@ -103,7 +102,7 @@ function logout() {
           <el-dropdown trigger="click">
             <button class="user-trigger" type="button">
               <span class="avatar">{{ initials }}</span>
-              <span class="user-copy"><strong>{{ auth.user?.name || '学习者' }}</strong><small>{{ roleLabel }}</small></span>
+              <span class="user-copy"><strong>{{ auth.user?.name || '学习者' }}</strong><small>个人学习空间</small></span>
               <el-icon><ArrowDown /></el-icon>
             </button>
             <template #dropdown>

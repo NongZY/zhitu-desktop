@@ -17,40 +17,56 @@ from app.models import (
 )
 from app.security import hash_password
 
-DEMO_USERS = [
-    ("admin@example.com", "系统管理员", UserRole.admin, "Admin123!"),
-    ("teacher@example.com", "示例教师", UserRole.teacher, "Teacher123!"),
-    ("student@example.com", "示例学生", UserRole.student, "Student123!"),
-]
+DEMO_USER = ("learner@example.com", "示例学习者", "Learn123!")
+DEMO_TEXTBOOK_TITLE = "七年级数学示例教材"
+LEGACY_DEMO_OWNER_EMAIL = "teacher@example.com"
 
 
 def seed() -> None:
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as db:
-        users: dict[UserRole, User] = {}
-        for email, name, role, password in DEMO_USERS:
-            user = db.scalar(select(User).where(User.email == email))
-            if user is None:
-                user = User(
-                    email=email,
-                    name=name,
-                    role=role,
-                    hashed_password=hash_password(password),
-                )
-                db.add(user)
-                db.flush()
-            users[role] = user
+        email, name, password = DEMO_USER
+        learner = db.scalar(select(User).where(User.email == email))
+        if learner is None:
+            learner = User(
+                email=email,
+                name=name,
+                role=UserRole.student,
+                hashed_password=hash_password(password),
+            )
+            db.add(learner)
+            db.flush()
 
-        textbook = db.scalar(select(Textbook).where(Textbook.title == "七年级数学示例教材"))
+        textbook = db.scalar(
+            select(Textbook).where(
+                Textbook.title == DEMO_TEXTBOOK_TITLE,
+                Textbook.owner_id == learner.id,
+            )
+        )
+        if textbook is None:
+            # Upgrade only the original seeded book. A different learner may use the
+            # same title, and seed must never take ownership of their private book.
+            textbook = db.scalar(
+                select(Textbook)
+                .join(User, User.id == Textbook.owner_id)
+                .where(
+                    Textbook.title == DEMO_TEXTBOOK_TITLE,
+                    Textbook.edition == "演示版",
+                    User.email == LEGACY_DEMO_OWNER_EMAIL,
+                )
+            )
+            if textbook is not None:
+                textbook.owner_id = learner.id
+
         if textbook is None:
             textbook = Textbook(
-                title="七年级数学示例教材",
+                title=DEMO_TEXTBOOK_TITLE,
                 edition="演示版",
                 subject="数学",
                 grade="七年级",
                 description="用于体验章节、题库、自适应考试与教材问答的内置示例。",
                 parse_status="ready",
-                owner_id=users[UserRole.teacher].id,
+                owner_id=learner.id,
             )
             db.add(textbook)
             db.flush()
@@ -142,7 +158,7 @@ def seed() -> None:
                         difficulty=difficulty,
                         status="approved",
                         source="seed",
-                        created_by=users[UserRole.teacher].id,
+                        created_by=learner.id,
                     )
                 )
             chunks = [
@@ -161,8 +177,15 @@ def seed() -> None:
                         metadata_json={"source": "seed"},
                     )
                 )
+        else:
+            for question in db.scalars(
+                select(Question).where(
+                    Question.textbook_id == textbook.id, Question.source == "seed"
+                )
+            ).all():
+                question.created_by = learner.id
         db.commit()
-    print("示例数据已就绪。可使用 README 中的三个账号登录。")
+    print("示例数据已就绪。可使用 learner@example.com / Learn123! 登录。")
 
 
 if __name__ == "__main__":

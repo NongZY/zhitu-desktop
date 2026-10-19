@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from minio import Minio
+from minio.error import S3Error
 
 from app.config import settings
 
@@ -44,5 +45,25 @@ def materialize(uri: str) -> tuple[Path, bool]:
     bucket, object_name = bucket_and_name.split("/", 1)
     with NamedTemporaryFile(suffix=".pdf", delete=False) as temporary:
         path = Path(temporary.name)
-    _client().fget_object(bucket, object_name, str(path))
+    try:
+        _client().fget_object(bucket, object_name, str(path))
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
     return path, True
+
+
+def source_signature(uri: str) -> tuple:
+    """Cache invalidation only; remote ETags are not content fingerprints."""
+    if not uri.startswith('minio://'):
+        path = Path(uri).resolve()
+        stat = path.stat()
+        return (str(path), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+    bucket, name = uri.removeprefix('minio://').split('/', 1)
+    try:
+        stat = _client().stat_object(bucket, name)
+    except S3Error as exc:
+        if exc.code in {'NoSuchKey', 'NoSuchObject', 'NoSuchBucket'}:
+            raise FileNotFoundError(uri) from exc
+        raise
+    return (uri, stat.version_id, stat.etag, stat.size, stat.last_modified)

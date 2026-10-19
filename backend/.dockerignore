@@ -5,3 +5,10 @@ tests
 *.db
 uploads
 *.egg-info
+data
+.env
+.env.*
+*.dump
+*.pdf
+.ruff_cache
+.coverage

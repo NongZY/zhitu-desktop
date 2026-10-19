@@ -29,6 +29,21 @@ uploads/
 logs/
 *.log
 celerybeat-schedule*
+backups/
+*.dump
+*.backup
+
+# Local execution evidence and textbook page screenshots
+/.superpowers/
+/tmp/
+
+# Learning materials belong to local storage, not the source repository
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.epub
 
 # IDE / OS
 .idea/
@@ -41,6 +56,13 @@ desktop.ini
 *.db
 *.sqlite
 *.sqlite3
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
 
 # Build artifacts
 build/

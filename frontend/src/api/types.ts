@@ -1,10 +1,7 @@
-export type UserRole = 'student' | 'teacher' | 'admin'
-
 export interface User {
   id: string | number
   email: string
   name: string
-  role: UserRole
   avatar_url?: string | null
   created_at?: string
 }
@@ -22,7 +19,6 @@ export interface LoginPayload {
 
 export interface RegisterPayload extends LoginPayload {
   name: string
-  role?: UserRole
 }
 
 export type TextbookStatus = 'draft' | 'processing' | 'review' | 'ready' | 'failed'
@@ -39,6 +35,7 @@ export interface Textbook {
   status: TextbookStatus
   parse_status?: string
   processing_progress?: number
+  processing_message?: string | null
   chapter_count?: number
   knowledge_point_count?: number
   question_count?: number
@@ -73,6 +70,47 @@ export interface Chapter {
 export interface TextbookStructure {
   textbook: Textbook
   chapters: Chapter[]
+}
+
+export interface ChapterContent {
+  id: number
+  page_number: number | null
+  content: string
+  quality_note?: string
+}
+
+export interface PageSearchItem {
+  page_number: number
+  excerpt: string
+  chapter_id: number | null
+  chapter_title: string | null
+}
+
+export interface ReaderMetadata {
+  page_count: number
+  document_revision: string | null
+}
+
+export interface ReadingProgress {
+  textbook_id: number
+  page_number: number
+  chapter_id: number | null
+  document_revision: string
+  revision: number
+  updated_at: string
+}
+
+export interface ReadingProgressPayload {
+  page_number: number
+  chapter_id: number | null
+  document_revision: string
+  expected_revision: number
+}
+
+export interface ReadingHome {
+  textbook_count: number
+  continue_reading: (ReadingProgress & { title: string; chapter_title: string | null; page_count: number }) | null
+  reading_notice: string | null
 }
 
 export interface ImportTask {
@@ -147,6 +185,7 @@ export interface QuestionPayload {
 }
 
 export interface ExamGeneratePayload {
+  auto_fill?: boolean
   title?: string
   textbook_id?: string | number
   chapter_ids?: Array<string | number>
@@ -202,6 +241,9 @@ export interface ExamResult {
   total_score: number
   correct_count: number
   wrong_count?: number
+  pending_count?: number
+  graded_total_score?: number
+  status?: string
   total_count: number
   duration_seconds: number
   submitted_at?: string
@@ -212,6 +254,7 @@ export interface ExamResult {
     correct_answer?: unknown
     is_correct: boolean | null
     score: number
+    max_score?: number
     explanation?: string | null
   }>
   mastery_changes?: MasteryItem[]
@@ -237,6 +280,9 @@ export interface ExamHistoryItem {
   total_score: number
   correct_count: number
   wrong_count: number
+  pending_count?: number
+  graded_total_score?: number
+  status?: string
   duration_seconds?: number | null
   submitted_at: string
 }
@@ -246,6 +292,8 @@ export interface RecentExam {
   title: string
   score: number
   total_score: number
+  pending_count?: number
+  graded_total_score?: number
   submitted_at: string
 }
 
@@ -281,6 +329,58 @@ export interface WrongQuestion {
   question_type?: QuestionType
   difficulty?: number
   resolved?: boolean
+  textbook_id?: string | number | null
+  chapter_id?: string | number | null
+  knowledge_point_id?: string | number | null
+}
+
+export interface AnswerEvidence {
+  question_id: string | number
+  stem: string
+  question_type: QuestionType
+  options: QuestionOption[] | string[] | Record<string, string> | null
+  user_answer: unknown
+  correct_answer: unknown
+  is_correct: boolean | null
+  score: number
+  max_score: number
+  explanation: string | null
+  knowledge_point_id: string | number | null
+  global_knowledge_point_id: string | number | null
+  knowledge_point_name: string | null
+  chapter_id: string | number | null
+  textbook_id: string | number
+  time_spent_seconds: number | null
+}
+
+export interface ExamRecordDetail extends ExamHistoryItem {
+  textbook_id: string | number | null
+  textbook_title: string | null
+  pending_count: number
+  graded_total_score: number
+  status: string
+  details: AnswerEvidence[]
+}
+
+export interface KnowledgePointDetail {
+  id: string | number
+  name: string
+  description: string | null
+  subject: string
+  grade: string | null
+  mastery: number | null
+  attempts: number
+  correct_count: number
+  updated_at: string | null
+  mappings: Array<{
+    textbook_id: string | number
+    textbook_title: string
+    chapter_id: string | number
+    chapter_title: string
+    page_start: number | null
+    local_knowledge_point_id: string | number
+  }>
+  recent_answers: Array<AnswerEvidence & { record_id: string | number; submitted_at: string }>
 }
 
 export interface LearningPathNode {

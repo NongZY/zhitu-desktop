@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.access import owned_chapter_or_404, owned_textbook_or_404
 from app.config import settings
 from app.database import get_db
 from app.models import Chapter, DocumentChunk, Textbook, User
 from app.schemas import RagAnswer, RagAskRequest, RagCitation
-from app.security import get_current_user, require_staff
+from app.security import get_current_user
+from app.services.pdf_outline import chapter_scope_ids
 
 router = APIRouter(prefix="/rag", tags=["RAG 教材问答"])
 
@@ -65,14 +67,24 @@ def _llm_answer(question: str, citations: list[RagCitation]) -> str | None:
 @router.post("/ask", response_model=RagAnswer)
 def ask(
     payload: RagAskRequest,
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> RagAnswer:
-    stmt = select(DocumentChunk)
+    if payload.textbook_id is not None:
+        owned_textbook_or_404(db, payload.textbook_id, current_user.id)
+    if payload.chapter_id is not None:
+        chapter = owned_chapter_or_404(db, payload.chapter_id, current_user.id)
+        if payload.textbook_id is not None and chapter.textbook_id != payload.textbook_id:
+            raise HTTPException(status_code=422, detail="章节不属于所选教材")
+    stmt = (
+        select(DocumentChunk)
+        .join(Textbook, Textbook.id == DocumentChunk.textbook_id)
+        .where(Textbook.owner_id == current_user.id)
+    )
     if payload.textbook_id is not None:
         stmt = stmt.where(DocumentChunk.textbook_id == payload.textbook_id)
     if payload.chapter_id is not None:
-        stmt = stmt.where(DocumentChunk.chapter_id == payload.chapter_id)
+        stmt = stmt.where(DocumentChunk.chapter_id.in_(chapter_scope_ids(db, chapter)))
     chunks = db.scalars(stmt.order_by(DocumentChunk.id).limit(1000)).all()
     ranked = sorted(
         ((chunk, _score(payload.question, chunk.content)) for chunk in chunks),
@@ -103,7 +115,13 @@ def ask(
             grounded=False,
             model="retrieval-only",
         )
-    generated = _llm_answer(payload.question, citations)
+    # A page with unresolved math is evidence to inspect, not reliable input for
+    # a model to complete by guessing. Keep its page citation for original view.
+    needs_review = any(
+        (chunk.metadata_json or {}).get("math_review_required") or "\ufffd" in chunk.content
+        for chunk, _ in selected
+    )
+    generated = None if needs_review else _llm_answer(payload.question, citations)
     if generated:
         return RagAnswer(
             answer=generated,
@@ -114,8 +132,14 @@ def ask(
     excerpts = "\n\n".join(
         f"资料 {index + 1}：{citation.excerpt}" for index, citation in enumerate(citations[:3])
     )
+    introduction = (
+        "找到相关内容，但部分公式或符号没有完整识别。请在课本中查看原页核对，"
+        "不要仅凭下列提取文字计算：\n\n"
+        if needs_review else
+        "找到以下教材内容，暂未生成 AI 解答，请结合课本原页阅读：\n\n"
+    )
     return RagAnswer(
-        answer=("已检索到以下教材原文。当前未配置大模型，因此保留原文供你核对：\n\n" + excerpts),
+        answer=introduction + excerpts,
         citations=citations,
         grounded=True,
         model="retrieval-only",
@@ -128,16 +152,18 @@ def create_chunk(
     content: str,
     chapter_id: int | None = None,
     page_number: int | None = None,
-    _: User = Depends(require_staff),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict[str, object]:
     if not content.strip():
         raise HTTPException(status_code=422, detail="片段内容不能为空")
-    if db.get(Textbook, textbook_id) is None:
-        raise HTTPException(status_code=404, detail="教材不存在")
+    owned_textbook_or_404(db, textbook_id, current_user.id)
     if chapter_id is not None:
-        chapter = db.get(Chapter, chapter_id)
-        if chapter is None or chapter.textbook_id != textbook_id:
+        try:
+            chapter = owned_chapter_or_404(db, chapter_id, current_user.id)
+        except HTTPException as exc:
+            raise HTTPException(status_code=422, detail="章节不属于所选教材") from exc
+        if chapter.textbook_id != textbook_id:
             raise HTTPException(status_code=422, detail="章节不属于所选教材")
     next_index = len(
         db.scalars(select(DocumentChunk).where(DocumentChunk.textbook_id == textbook_id)).all()

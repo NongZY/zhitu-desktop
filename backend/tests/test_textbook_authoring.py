@@ -1,29 +1,5 @@
-from app.database import SessionLocal
-from app.models import User, UserRole
-from app.security import hash_password
-
-
-def _teacher_headers(client) -> dict[str, str]:
-    with SessionLocal() as db:
-        db.add(
-            User(
-                email="teacher@example.com",
-                name="测试教师",
-                role=UserRole.teacher,
-                hashed_password=hash_password("Learning123!"),
-            )
-        )
-        db.commit()
-    response = client.post(
-        "/api/v1/auth/login",
-        json={"email": "teacher@example.com", "password": "Learning123!"},
-    )
-    assert response.status_code == 200
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
-
-
-def test_teacher_can_build_and_publish_textbook_structure(client):
-    headers = _teacher_headers(client)
+def test_learner_can_build_and_confirm_textbook_structure(client, create_learner):
+    headers = create_learner("author@example.com")
     textbook = client.post(
         "/api/v1/textbooks",
         headers=headers,
@@ -70,26 +46,13 @@ def test_teacher_can_build_and_publish_textbook_structure(client):
     assert summary["question_count"] == 0
 
 
-def test_student_cannot_create_textbook(client):
-    register = client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "student@example.com",
-            "password": "Learning123!",
-            "name": "学生",
-            "role": "student",
-        },
-    )
-    assert register.status_code == 201
-    login = client.post(
-        "/api/v1/auth/login",
-        json={"email": "student@example.com", "password": "Learning123!"},
-    )
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-
+def test_every_learner_can_create_a_personal_textbook(client, create_learner):
+    headers = create_learner("new-reader@example.com")
     response = client.post(
         "/api/v1/textbooks",
         headers=headers,
-        json={"title": "无权限教材", "subject": "数学"},
+        json={"title": "我的教材", "subject": "数学"},
     )
-    assert response.status_code == 403
+    assert response.status_code == 201
+    listed = client.get("/api/v1/textbooks", headers=headers)
+    assert [item["title"] for item in listed.json()["items"]] == ["我的教材"]

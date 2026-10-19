@@ -20,3 +20,22 @@ def client():
     with TestClient(app) as test_client:
         yield test_client
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture()
+def create_learner(client):
+    def create(email: str, name: str = "测试学习者") -> dict[str, str]:
+        password = "Learning123!"
+        registration = client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": password, "name": name},
+        )
+        assert registration.status_code == 201, registration.text
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password},
+        )
+        assert login.status_code == 200, login.text
+        return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    return create

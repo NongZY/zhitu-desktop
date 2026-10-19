@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "智能自适应学习系统 API"
     api_prefix: str = "/api/v1"
     debug: bool = False
+    local_mode: bool = False
     database_url: str = "sqlite:///./adaptive_learning.db"
     jwt_secret_key: str = "change-this-secret-in-production"
     jwt_algorithm: str = "HS256"

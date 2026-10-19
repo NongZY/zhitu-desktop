@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     Float,
@@ -25,6 +26,8 @@ def utcnow() -> datetime:
 
 
 class UserRole(str, enum.Enum):
+    """Legacy database values retained for upgrades; they grant no product permissions."""
+
     student = "student"
     teacher = "teacher"
     admin = "admin"
@@ -37,6 +40,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     hashed_password: Mapped[str] = mapped_column(String(255))
+    # Kept mapped so existing databases can still insert users without a destructive
+    # migration. Public schemas and authorization deliberately ignore this value.
     role: Mapped[UserRole] = mapped_column(Enum(UserRole), default=UserRole.student)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -293,3 +298,30 @@ class ImportTask(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class ReadingProgress(Base):
+    __tablename__ = "reading_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "textbook_id", name="uq_reading_progress_user_textbook"),
+        CheckConstraint("page_number > 0", name="ck_reading_progress_page_positive"),
+        CheckConstraint("revision > 0", name="ck_reading_progress_revision_positive"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    textbook_id: Mapped[int] = mapped_column(ForeignKey("textbooks.id"), index=True)
+    page_number: Mapped[int] = mapped_column(Integer)
+    # A disposable directory hint: reparsing can replace chapters while the PDF
+    # physical page remains valid. Ownership is checked when saving/reading it.
+    chapter_id: Mapped[int | None] = mapped_column(Integer)
+    document_revision: Mapped[str] = mapped_column(String(64))
+    revision: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SchemaMigration(Base):
+    __tablename__ = "schema_migrations"
+
+    version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

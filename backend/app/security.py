@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import User, UserRole
+from app.models import User
 
 password_hash = PasswordHash.recommended()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl=f"{settings.api_prefix}/auth/login")
@@ -26,7 +26,7 @@ def verify_password(password: str, hashed: str) -> bool:
 def create_access_token(user: User) -> str:
     expires = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     return jwt.encode(
-        {"sub": str(user.id), "role": user.role.value, "exp": expires},
+        {"sub": str(user.id), "exp": expires},
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
@@ -47,9 +47,3 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None or not user.is_active:
         raise credentials_error
     return user
-
-
-def require_staff(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role not in {UserRole.teacher, UserRole.admin}:
-        raise HTTPException(status_code=403, detail="需要教师或管理员权限")
-    return current_user

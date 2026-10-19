@@ -33,7 +33,7 @@ async function submit() {
   if (!formRef.value || !(await formRef.value.validate().catch(() => false))) return
   try {
     if (mode.value === 'login') await auth.login({ email: form.email, password: form.password })
-    else await auth.register({ name: form.name, email: form.email, password: form.password, role: 'student' })
+    else await auth.register({ name: form.name, email: form.email, password: form.password })
     ElMessage.success(mode.value === 'login' ? '欢迎回来' : '账户创建成功')
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     await router.replace(redirect)
@@ -42,11 +42,6 @@ async function submit() {
   }
 }
 
-async function enterDemo() {
-  auth.enterDemo()
-  ElMessage.info('已进入只读演示模式，连接后端后可使用完整功能')
-  await router.replace('/dashboard')
-}
 </script>
 
 <template>
@@ -60,8 +55,8 @@ async function enterDemo() {
         <h1>让每一次学习<br /><span>都更接近掌握</span></h1>
         <p>从教材出发，理解你的知识状态，为你规划真正个性化的学习路径。</p>
         <div class="story-points">
-          <div><span><el-icon><Reading /></el-icon></span><p><strong>教材驱动</strong><small>结构化知识，精确引用来源</small></p></div>
-          <div><span><el-icon><Check /></el-icon></span><p><strong>自适应练习</strong><small>持续识别薄弱点，动态调整策略</small></p></div>
+          <div><span><el-icon><Reading /></el-icon></span><p><strong>用自己的课本学习</strong><small>按章节阅读，查找问题的出处</small></p></div>
+          <div><span><el-icon><Check /></el-icon></span><p><strong>多练不会的内容</strong><small>做几道题，看看哪里还需要复习</small></p></div>
           <div><span><el-icon><Connection /></el-icon></span><p><strong>成长路径</strong><small>跨教材延续你的学习轨迹</small></p></div>
         </div>
       </div>
@@ -94,9 +89,7 @@ async function enterDemo() {
             {{ mode === 'login' ? '登录' : '创建账户' }} <el-icon><ArrowRight /></el-icon>
           </el-button>
         </el-form>
-        <div class="demo-divider"><span>或</span></div>
-        <el-button class="demo-button" size="large" @click="enterDemo">只读演示浏览</el-button>
-        <p class="demo-tip">后端未启动也可查看界面；演示模式不会伪造或保存任何数据。</p>
+        <p class="demo-tip">还没有账号？点击上方“注册”，创建自己的学习空间。</p>
       </div>
     </section>
   </main>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MathContent from '../components/MathContent.vue'
 import { nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ChatDotRound, Document, Promotion, Reading, RefreshLeft } from '@element-plus/icons-vue'
@@ -11,6 +12,8 @@ interface ChatMessage { role: 'user' | 'assistant'; content: string; citations?:
 const route = useRoute()
 const books = ref<Textbook[]>([])
 const textbookId = ref<string | number>()
+const chapterId = ref<string | number>()
+const chapterTitle = ref('')
 const question = ref('')
 const sending = ref(false)
 const messages = ref<ChatMessage[]>([])
@@ -25,7 +28,7 @@ async function send(preset?: string) {
   sending.value = true
   await scrollBottom()
   try {
-    const answer = await ragApi.ask({ question: content, textbook_id: textbookId.value, top_k: 5 })
+    const answer = await ragApi.ask({ question: content, textbook_id: textbookId.value, chapter_id: chapterId.value, top_k: 5 })
     messages.value.push({ role: 'assistant', content: answer.answer, citations: answer.citations })
   } catch (err) {
     messages.value.push({ role: 'assistant', content: getApiErrorMessage(err, '问答服务暂不可用，请稍后重试。'), error: true })
@@ -47,6 +50,18 @@ onMounted(async () => {
     books.value = (await textbookApi.list()).items.filter((book) => ['ready', 'review'].includes(book.status))
     const requested = typeof route.query.textbook === 'string' ? route.query.textbook : undefined
     textbookId.value = requested || books.value[0]?.id
+    if (requested && typeof route.query.chapter === 'string') {
+      const structure = await textbookApi.getStructure(requested)
+      const find = (chapters: typeof structure.chapters): typeof structure.chapters[number] | undefined => {
+        for (const chapter of chapters) {
+          if (String(chapter.id) === route.query.chapter) return chapter
+          const child = find(chapter.children || [])
+          if (child) return child
+        }
+      }
+      const chapter = find(structure.chapters)
+      if (chapter) { chapterId.value = chapter.id; chapterTitle.value = chapter.title }
+    }
   } catch { books.value = [] }
 })
 </script>
@@ -56,14 +71,15 @@ onMounted(async () => {
     <PageHeader eyebrow="Grounded Q&A" title="教材问答" description="回答严格基于已解析教材片段，并附带章节、页码与原文引用。">
       <template #actions><el-button :icon="RefreshLeft" @click="reset">新对话</el-button></template>
     </PageHeader>
+    <el-alert v-if="chapterId" type="info" show-icon :title="`当前仅检索：${chapterTitle}（含子章节）`" @close="chapterId = undefined" />
     <div class="rag-grid">
       <section class="surface-card chat-card">
-        <header class="chat-header"><div><span><el-icon><ChatDotRound /></el-icon></span><div><strong>教材智能助教</strong><small><i></i> 引用式回答 · 不确定时拒答</small></div></div><el-select v-model="textbookId" placeholder="全部教材" clearable><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select></header>
+        <header class="chat-header"><div><span><el-icon><ChatDotRound /></el-icon></span><div><strong>教材智能助教</strong><small><i></i> 引用式回答 · 不确定时拒答</small></div></div><el-select v-model="textbookId" placeholder="全部教材" clearable @change="chapterId = undefined"><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select></header>
         <div ref="conversation" class="conversation">
           <div v-if="!messages.length" class="chat-empty"><span><el-icon><Reading /></el-icon></span><h2>从教材中寻找答案</h2><p>选择一本教材并提出问题。系统先检索相关原文，再生成带引用的回答。</p><div><button v-for="item in suggestions" :key="item" type="button" @click="send(item)">{{ item }}</button></div></div>
           <article v-for="(message, index) in messages" :key="index" class="message" :class="message.role">
             <span class="message-avatar">{{ message.role === 'user' ? '我' : '知' }}</span>
-            <div class="message-body"><p :class="{ error: message.error }">{{ message.content }}</p><div v-if="message.citations?.length" class="citations"><strong>引用来源</strong><button v-for="(citation, citationIndex) in message.citations" :key="citation.chunk_id || citationIndex" type="button"><el-icon><Document /></el-icon><span><b>[{{ citationIndex + 1 }}] {{ citation.textbook_title }}</b><small>{{ citation.chapter_title || '教材正文' }}<template v-if="citation.page"> · 第 {{ citation.page }} 页</template></small><em>{{ citation.content }}</em></span></button></div></div>
+            <div class="message-body"><p :class="{ error: message.error }"><MathContent :text="message.content" /></p><div v-if="message.citations?.length" class="citations"><strong>引用来源</strong><button v-for="(citation, citationIndex) in message.citations" :key="citation.chunk_id || citationIndex" type="button"><el-icon><Document /></el-icon><span><b>[{{ citationIndex + 1 }}] {{ citation.textbook_title }}</b><small>{{ citation.chapter_title || '教材正文' }}<template v-if="citation.page"> · 第 {{ citation.page }} 页</template></small><em>{{ citation.content }}</em></span></button></div></div>
           </article>
           <article v-if="sending" class="message assistant"><span class="message-avatar">知</span><div class="message-body typing"><i></i><i></i><i></i><span>正在检索教材并组织回答</span></div></article>
         </div>
@@ -71,7 +87,7 @@ onMounted(async () => {
       </section>
       <aside class="rag-aside">
         <section class="surface-card guide-card"><p class="eyebrow">提问指南</p><h2>如何得到更好的回答</h2><ul><li><span>01</span><p><strong>限定教材范围</strong><small>选择具体教材，减少跨资料干扰。</small></p></li><li><span>02</span><p><strong>描述具体问题</strong><small>带上概念、章节或题目条件。</small></p></li><li><span>03</span><p><strong>核对原文引用</strong><small>点击式卡片会显示相关教材片段。</small></p></li></ul></section>
-        <section class="privacy-card"><el-icon><Document /></el-icon><div><strong>资料安全</strong><p>默认仅检索私有教材。启用云端模型前，请确认教材许可与数据外发策略。</p></div></section>
+        <section class="privacy-card"><el-icon><Document /></el-icon><div><strong>资料安全</strong><p>只查找你自己的课本。若配置了在线 AI，会把相关课本片段发送给该服务。</p></div></section>
       </aside>
     </div>
   </div>

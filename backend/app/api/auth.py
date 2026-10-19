@@ -13,8 +13,6 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
-    if payload.role != UserRole.student:
-        raise HTTPException(status_code=403, detail="公开注册仅允许创建学生账户")
     email = payload.email.lower()
     if db.scalar(select(User).where(User.email == email)):
         raise HTTPException(status_code=409, detail="邮箱已注册")

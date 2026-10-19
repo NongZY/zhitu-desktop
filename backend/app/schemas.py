@@ -1,16 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-
-from app.models import UserRole
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class UserRegister(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     name: str = Field(min_length=1, max_length=100)
-    role: UserRole = UserRole.student
 
 
 class LoginRequest(BaseModel):
@@ -24,7 +23,6 @@ class UserRead(BaseModel):
     id: int
     email: EmailStr
     name: str
-    role: UserRole
     is_active: bool
     created_at: datetime
 
@@ -61,6 +59,7 @@ class TextbookRead(TextbookCreate):
     parse_status: str
     owner_id: int
     processing_progress: int = 0
+    processing_message: str | None = None
     chapter_count: int = 0
     knowledge_point_count: int = 0
     question_count: int = 0
@@ -220,6 +219,7 @@ class BatchImportResult(BaseModel):
 
 
 class ExamGenerateRequest(BaseModel):
+    auto_fill: bool = False
     title: str | None = Field(default=None, max_length=200)
     textbook_id: int | None = None
     chapter_ids: list[int] = Field(default_factory=list)
@@ -269,6 +269,7 @@ class AnswerResult(BaseModel):
     correct_answer: Any | None
     is_correct: bool | None
     score: float
+    max_score: float
     explanation: str | None
 
 
@@ -279,6 +280,10 @@ class ExamResultRead(BaseModel):
     total_score: float
     correct_count: int
     wrong_count: int
+    pending_count: int = 0
+    graded_total_score: float = 0
+    status: str = 'submitted'
+    duration_seconds: int | None = None
     submitted_at: datetime
     details: list[AnswerResult]
 
@@ -301,6 +306,9 @@ class MasteryList(BaseModel):
 class WrongQuestionItem(BaseModel):
     id: int
     question_id: int
+    textbook_id: int | None = None
+    chapter_id: int | None = None
+    knowledge_point_id: int | None = None
     stem: str
     question_type: str
     difficulty: int
@@ -315,6 +323,7 @@ class WrongQuestionList(BaseModel):
 
 
 class DashboardRead(BaseModel):
+    weak_point_count: int = 0
     textbook_count: int
     exam_count: int
     completed_exam_count: int
@@ -385,3 +394,43 @@ class ImportTaskRead(BaseModel):
     message: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class ReadingProgressWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_number: int = Field(strict=True, gt=0)
+    chapter_id: int | None = Field(default=None, strict=True, gt=0)
+    document_revision: str = Field(strict=True, pattern=r"^[0-9a-f]{64}$")
+    expected_revision: int = Field(strict=True, ge=0)
+
+
+class ReadingProgressRead(BaseModel):
+    textbook_id: int = Field(strict=True, gt=0)
+    page_number: int = Field(strict=True, gt=0)
+    chapter_id: int | None = Field(strict=True, gt=0)
+    document_revision: str
+    revision: int = Field(strict=True, gt=0)
+    updated_at: datetime
+
+    @field_validator("updated_at")
+    @classmethod
+    def utc_timestamp(cls, value: datetime) -> datetime:
+        # SQLite stores a naive datetime even for DateTime(timezone=True).
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
+class ReadingProgressResult(BaseModel):
+    progress: ReadingProgressRead | None
+
+
+class ContinueReading(ReadingProgressRead):
+    title: str
+    chapter_title: str | None
+    page_count: int
+
+
+class ReadingHome(BaseModel):
+    textbook_count: int
+    continue_reading: ContinueReading | None
+    reading_notice: str | None

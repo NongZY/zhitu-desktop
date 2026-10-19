@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import MathContent from '../components/MathContent.vue'
+import QuestionTypeTag from '../components/QuestionTypeTag.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -23,7 +25,15 @@ let timer: number | undefined
 const currentQuestion = computed(() => paper.value?.questions[currentIndex.value])
 const answeredCount = computed(() => Object.values(answers).filter((value) => Array.isArray(value) ? value.length : value !== null && value !== '').length)
 const progress = computed(() => paper.value?.questions.length ? Math.round(answeredCount.value / paper.value.questions.length * 100) : 0)
-const resultRate = computed(() => result.value?.total_score ? Math.round(result.value.score / result.value.total_score * 100) : 0)
+const gradedTotal = computed(() => result.value?.graded_total_score ?? result.value?.total_score ?? 0)
+const pendingCount = computed(() => result.value?.pending_count ?? result.value?.details?.filter(item => item.is_correct === null).length ?? 0)
+const resultRate = computed(() => gradedTotal.value > 0 ? Math.round((result.value?.score || 0) / gradedTotal.value * 100) : 0)
+
+function answerText(value: unknown): string {
+  if (value == null || value === '' || (Array.isArray(value) && !value.length)) return '未作答'
+  if (typeof value === 'boolean') return value ? '正确' : '错误'
+  return Array.isArray(value) ? value.map(String).join('、') : String(value)
+}
 
 function optionsOf(options: ExamPaper['questions'][number]['options']): QuestionOption[] {
   if (!options) return []
@@ -51,7 +61,7 @@ async function load() {
       }
     }, 1000)
   } catch (err) {
-    error.value = getApiErrorMessage(err, '试卷加载失败')
+    error.value = getApiErrorMessage(err, '练习加载失败')
   } finally {
     loading.value = false
   }
@@ -73,7 +83,7 @@ async function submit(auto = false) {
     })
     if (timer) window.clearInterval(timer)
     if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined)
-    ElMessage.success(auto ? '考试时间到，系统已自动交卷' : '交卷成功')
+    ElMessage.success(auto ? '练习时间到，系统已自动提交' : '练习已完成')
   } catch (err) {
     ElMessage.error(getApiErrorMessage(err, '交卷失败，请稍后重试'))
   } finally {
@@ -97,13 +107,13 @@ onBeforeUnmount(() => { if (timer) window.clearInterval(timer) })
 <template>
   <main class="exam-screen">
     <header class="exam-header">
-      <button class="exam-brand" type="button" @click="router.push('/dashboard')"><span>知途</span><small>模拟考试</small></button>
-      <div v-if="paper" class="exam-title"><strong>{{ paper.title }}</strong><small>{{ paper.questions.length }} 题 · 满分 {{ paper.total_score }} 分</small></div>
-      <div class="exam-tools"><button type="button" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon><span>全屏</span></button><div class="countdown" :class="{ urgent: remaining < 300 }"><el-icon><Clock /></el-icon><span>{{ formatDuration(remaining) }}</span></div><el-button v-if="paper && !result" type="primary" :loading="submitting" @click="submit(false)">交卷</el-button></div>
+      <button class="exam-brand" type="button" @click="router.push('/dashboard')"><span>知途</span><small>专注练习</small></button>
+      <div v-if="paper" class="exam-title"><strong>{{ paper.title }}</strong><small>{{ paper.questions.length }} 题 · 共 {{ paper.total_score }} 分</small></div>
+      <div class="exam-tools"><button type="button" @click="toggleFullscreen"><el-icon><FullScreen /></el-icon><span>全屏</span></button><div class="countdown" :class="{ urgent: remaining < 300 }"><el-icon><Clock /></el-icon><span>{{ formatDuration(remaining) }}</span></div><el-button v-if="paper && !result" type="primary" :loading="submitting" @click="submit(false)">完成练习</el-button></div>
     </header>
 
-    <section v-if="loading" class="exam-loading"><el-icon class="is-loading"><Loading /></el-icon><p>正在准备试卷…</p></section>
-    <section v-else-if="error" class="exam-loading"><el-icon><Warning /></el-icon><h2>无法打开试卷</h2><p>{{ error }}</p><el-button @click="router.push('/exam/generate')">返回组卷</el-button></section>
+    <section v-if="loading" class="exam-loading"><el-icon class="is-loading"><Loading /></el-icon><p>正在准备练习…</p></section>
+    <section v-else-if="error" class="exam-loading"><el-icon><Warning /></el-icon><h2>无法打开练习</h2><p>{{ error }}</p><el-button @click="router.push('/exam/generate')">返回练习设置</el-button></section>
 
     <template v-else-if="paper && !result">
       <div class="exam-progress"><div :style="{ width: `${progress}%` }"></div></div>
@@ -116,27 +126,27 @@ onBeforeUnmount(() => { if (timer) window.clearInterval(timer) })
 
         <section v-if="currentQuestion" class="question-stage">
           <div class="question-card">
-            <div class="question-meta"><span>第 {{ currentIndex + 1 }} 题</span><el-tag effect="plain">{{ currentQuestion.score }} 分</el-tag><el-rate :model-value="currentQuestion.difficulty" disabled /></div>
-            <h1>{{ currentQuestion.stem }}</h1>
+            <div class="question-meta"><span>第 {{ currentIndex + 1 }} 题</span><QuestionTypeTag :type="currentQuestion.type" /><el-tag effect="plain">{{ currentQuestion.type === 'short_answer' ? '提交后自行核对' : `${currentQuestion.score} 分` }}</el-tag><el-rate :model-value="currentQuestion.difficulty" disabled /></div>
+            <h1><MathContent :text="currentQuestion.stem" /></h1>
             <el-radio-group v-if="currentQuestion.type === 'single_choice'" v-model="answers[answerKey(currentQuestion.id)]" class="choice-list">
-              <el-radio v-for="option in optionsOf(currentQuestion.options)" :key="option.key" :value="option.key" border><strong>{{ option.key }}</strong><span>{{ option.text }}</span></el-radio>
+              <el-radio v-for="option in optionsOf(currentQuestion.options)" :key="option.key" :value="option.key" border><strong>{{ option.key }}</strong><span><MathContent :text="option.text" /></span></el-radio>
             </el-radio-group>
             <el-checkbox-group v-else-if="currentQuestion.type === 'multiple_choice'" v-model="answers[answerKey(currentQuestion.id)] as string[]" class="choice-list">
-              <el-checkbox v-for="option in optionsOf(currentQuestion.options)" :key="option.key" :value="option.key" border><strong>{{ option.key }}</strong><span>{{ option.text }}</span></el-checkbox>
+              <el-checkbox v-for="option in optionsOf(currentQuestion.options)" :key="option.key" :value="option.key" border><strong>{{ option.key }}</strong><span><MathContent :text="option.text" /></span></el-checkbox>
             </el-checkbox-group>
             <el-radio-group v-else-if="currentQuestion.type === 'true_false'" v-model="answers[answerKey(currentQuestion.id)]" class="judge-list"><el-radio :value="true" border>正确</el-radio><el-radio :value="false" border>错误</el-radio></el-radio-group>
             <el-input v-else-if="currentQuestion.type === 'fill_blank'" v-model="answers[answerKey(currentQuestion.id)] as string" size="large" placeholder="请输入答案" />
-            <el-input v-else v-model="answers[answerKey(currentQuestion.id)] as string" type="textarea" :rows="8" placeholder="请写出解题过程与答案，主观题提交后等待教师评分" />
+            <el-input v-else v-model="answers[answerKey(currentQuestion.id)] as string" type="textarea" :rows="8" placeholder="请写出解题过程与答案，提交后可结合参考答案自行核对" />
           </div>
-          <div class="question-nav"><el-button :disabled="currentIndex === 0" @click="currentIndex--"><el-icon><ArrowLeft /></el-icon>上一题</el-button><el-button v-if="currentIndex < paper.questions.length - 1" type="primary" @click="currentIndex++">下一题</el-button><el-button v-else type="success" @click="submit(false)">完成并交卷</el-button></div>
+          <div class="question-nav"><el-button :disabled="currentIndex === 0" @click="currentIndex--"><el-icon><ArrowLeft /></el-icon>上一题</el-button><el-button v-if="currentIndex < paper.questions.length - 1" type="primary" @click="currentIndex++">下一题</el-button><el-button v-else type="success" @click="submit(false)">完成练习</el-button></div>
         </section>
       </div>
     </template>
 
     <section v-else-if="paper && result" class="result-page">
-      <div class="result-hero"><span class="result-check"><el-icon><Check /></el-icon></span><p class="eyebrow">EXAM COMPLETED</p><h1>本次得分 {{ result.score }} / {{ result.total_score }}</h1><p>客观题已完成评分，学习画像和错题本也已同步更新。</p><div class="score-ring" :style="{ '--score': `${resultRate * 3.6}deg` }"><strong>{{ resultRate }}%</strong><small>得分率</small></div><div class="result-stats"><div><strong>{{ result.correct_count }}</strong><small>答对</small></div><div><strong>{{ result.wrong_count }}</strong><small>答错</small></div><div><strong>{{ formatDuration(result.duration_seconds) }}</strong><small>用时</small></div></div></div>
-      <div class="result-details surface-card"><div class="section-title"><div><h2>答题解析</h2><p>逐题核对答案与教材解析</p></div></div><article v-for="(question, index) in paper.questions" :key="question.id" class="result-item" :class="{ correct: resultFor(question.id)?.is_correct, manual: resultFor(question.id)?.is_correct == null }"><span>{{ index + 1 }}</span><div><h3>{{ question.stem }}</h3><p>你的答案：{{ String(resultFor(question.id)?.user_answer ?? '未作答') }}</p><p>标准答案：{{ String(resultFor(question.id)?.correct_answer ?? '等待人工评分') }}</p><small>{{ resultFor(question.id)?.explanation || '暂无解析' }}</small></div><el-tag :type="resultFor(question.id)?.is_correct ? 'success' : resultFor(question.id)?.is_correct == null ? 'info' : 'danger'">{{ resultFor(question.id)?.is_correct ? '正确' : resultFor(question.id)?.is_correct == null ? '待评分' : '错误' }}</el-tag></article></div>
-      <div class="result-actions"><el-button @click="router.push('/results')">查看成绩与错题</el-button><el-button type="primary" @click="router.push('/exam/generate')">再练一组</el-button></div>
+      <div class="result-hero"><span class="result-check"><el-icon><Check /></el-icon></span><p class="eyebrow">EXAM COMPLETED</p><h1 v-if="gradedTotal > 0">客观题得分 {{ result.score }} / {{ gradedTotal }}</h1><h1 v-else>练习已提交</h1><p v-if="gradedTotal > 0">客观题已评分，掌握度和错题本已同步更新。</p><p v-if="pendingCount">{{ pendingCount }} 道简答题请结合参考答案自行核对，不计入客观题得分率，也不会直接判错。</p><div v-if="gradedTotal > 0" class="score-ring" :style="{ '--score': `${resultRate * 3.6}deg` }"><strong>{{ resultRate }}%</strong><small>客观题得分率</small></div><div class="result-stats"><div><strong>{{ result.correct_count }}</strong><small>答对</small></div><div><strong>{{ result.wrong_count }}</strong><small>答错</small></div><div><strong>{{ formatDuration(result.duration_seconds) }}</strong><small>用时</small></div></div></div>
+      <div class="result-details surface-card"><div class="section-title"><div><h2>答题解析</h2><p>逐题核对答案与参考解析</p></div></div><article v-for="(question, index) in paper.questions" :key="question.id" class="result-item" :class="{ correct: resultFor(question.id)?.is_correct, manual: resultFor(question.id)?.is_correct == null }"><span>{{ index + 1 }}</span><div><h3><MathContent :text="question.stem" /></h3><p v-for="option in optionsOf(question.options)" :key="option.key">{{ option.key }}. <MathContent :text="option.text" /></p><p>你的答案：<MathContent :text="answerText(resultFor(question.id)?.user_answer)" /></p><p>参考答案：<MathContent :text="resultFor(question.id)?.correct_answer == null ? '暂无参考答案' : answerText(resultFor(question.id)?.correct_answer)" /></p><small><MathContent :text="resultFor(question.id)?.explanation || '暂无解析'" /></small></div><el-tag :type="resultFor(question.id)?.is_correct ? 'success' : resultFor(question.id)?.is_correct == null ? 'info' : 'danger'">{{ resultFor(question.id)?.is_correct ? '正确' : resultFor(question.id)?.is_correct == null ? '自行核对' : '错误' }}</el-tag></article></div>
+      <div class="result-actions"><el-button @click="router.push(result.id ? `/results/${result.id}` : '/results')">查看学习记录</el-button><el-button type="primary" @click="router.push('/exam/generate')">再练一组</el-button></div>
     </section>
   </main>
 </template>

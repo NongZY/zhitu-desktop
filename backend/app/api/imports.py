@@ -3,14 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.access import owned_textbook_or_404
 from app.config import settings
 from app.database import get_db
-from app.models import ImportTask, Textbook, User, UserRole
+from app.models import ImportTask, User
 from app.schemas import ImportTaskRead
-from app.security import get_current_user, require_staff
+from app.security import get_current_user
+from app.services.import_dispatch import enqueue_local_import
 from app.services.storage import put_pdf, storage_enabled
 from app.worker import process_textbook_pdf
 
@@ -24,13 +26,12 @@ router = APIRouter(tags=["教材导入"])
 )
 async def upload_textbook(
     textbook_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    _: User = Depends(require_staff),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ImportTask:
-    textbook = db.get(Textbook, textbook_id)
-    if textbook is None:
-        raise HTTPException(status_code=404, detail="教材不存在")
+    textbook = owned_textbook_or_404(db, textbook_id, current_user.id)
     suffix = Path(file.filename or "").suffix.lower()
     if suffix != ".pdf" or file.content_type not in {"application/pdf", "application/octet-stream"}:
         raise HTTPException(status_code=415, detail="仅支持 PDF 文件")
@@ -65,8 +66,12 @@ async def upload_textbook(
     task = ImportTask(id=str(uuid4()), textbook_id=textbook.id, status="queued", progress=0)
     db.add(task)
     db.commit()
-    result = process_textbook_pdf.delay(task.id)
-    task.celery_task_id = result.id
+    if settings.local_mode:
+        task.celery_task_id = f"local:{task.id}"
+        background_tasks.add_task(enqueue_local_import, task.id)
+    else:
+        result = process_textbook_pdf.delay(task.id)
+        task.celery_task_id = result.id
     db.commit()
     db.refresh(task)
     return task
@@ -81,11 +86,8 @@ def import_task_status(
     task = db.get(ImportTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="导入任务不存在")
-    textbook = db.get(Textbook, task.textbook_id)
-    if current_user.role == UserRole.student or (
-        current_user.role == UserRole.teacher
-        and textbook is not None
-        and textbook.owner_id != current_user.id
-    ):
-        raise HTTPException(status_code=403, detail="无权查看该导入任务")
+    try:
+        owned_textbook_or_404(db, task.textbook_id, current_user.id)
+    except HTTPException as exc:
+        raise HTTPException(status_code=404, detail="导入任务不存在") from exc
     return task

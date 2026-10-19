@@ -2,8 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.access import (
+    owned_chapter_or_404,
+    owned_knowledge_point_or_404,
+    owned_question_or_404,
+    owned_textbook_or_404,
+)
 from app.database import get_db
-from app.models import Chapter, LocalKnowledgePoint, Question, Textbook, User, UserRole
+from app.models import Question, Textbook, User
 from app.schemas import (
     BatchImportResult,
     QuestionBatchImport,
@@ -12,32 +18,31 @@ from app.schemas import (
     QuestionRead,
     QuestionUpdate,
 )
-from app.security import get_current_user, require_staff
+from app.security import get_current_user
 
 router = APIRouter(prefix="/questions", tags=["题库"])
 
 
-def _question_or_404(db: Session, question_id: int) -> Question:
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    return question
-
-
-def _validate_links(db: Session, payload: QuestionCreate | QuestionUpdate) -> None:
+def _validate_links(
+    db: Session, payload: QuestionCreate | QuestionUpdate, user_id: int
+) -> None:
     values = payload.model_dump(exclude_unset=True)
     textbook_id = values.get("textbook_id")
     chapter_id = values.get("chapter_id")
     point_id = values.get("knowledge_point_id")
-    textbook = db.get(Textbook, textbook_id) if textbook_id is not None else None
-    if textbook_id is not None and textbook is None:
-        raise HTTPException(status_code=422, detail="教材不存在")
-    chapter = db.get(Chapter, chapter_id) if chapter_id is not None else None
-    if chapter_id is not None and chapter is None:
-        raise HTTPException(status_code=422, detail="章节不存在")
-    point = db.get(LocalKnowledgePoint, point_id) if point_id is not None else None
-    if point_id is not None and point is None:
-        raise HTTPException(status_code=422, detail="知识点不存在")
+    try:
+        if textbook_id is not None:
+            owned_textbook_or_404(db, textbook_id, user_id)
+        chapter = (
+            owned_chapter_or_404(db, chapter_id, user_id) if chapter_id is not None else None
+        )
+        point = (
+            owned_knowledge_point_or_404(db, point_id, user_id)
+            if point_id is not None
+            else None
+        )
+    except HTTPException as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
     if textbook_id is not None and chapter is not None and chapter.textbook_id != textbook_id:
         raise HTTPException(status_code=422, detail="章节不属于所选教材")
     if textbook_id is not None and point is not None and point.textbook_id != textbook_id:
@@ -60,10 +65,12 @@ def list_questions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> QuestionList:
-    stmt = select(Question)
-    if current_user.role == UserRole.student:
-        stmt = stmt.where(Question.status == "approved")
-    elif status_filter:
+    stmt = (
+        select(Question)
+        .join(Textbook, Textbook.id == Question.textbook_id)
+        .where(Textbook.owner_id == current_user.id)
+    )
+    if status_filter:
         stmt = stmt.where(Question.status == status_filter)
     if textbook_id is not None:
         stmt = stmt.where(Question.textbook_id == textbook_id)
@@ -91,11 +98,11 @@ def list_questions(
 @router.post("", response_model=QuestionRead, status_code=status.HTTP_201_CREATED)
 def create_question(
     payload: QuestionCreate,
-    staff: User = Depends(require_staff),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Question:
-    _validate_links(db, payload)
-    question = Question(**payload.model_dump(), created_by=staff.id)
+    _validate_links(db, payload, current_user.id)
+    question = Question(**payload.model_dump(), created_by=current_user.id)
     db.add(question)
     db.commit()
     db.refresh(question)
@@ -105,15 +112,15 @@ def create_question(
 @router.post("/batch", response_model=BatchImportResult, status_code=201)
 def batch_import_questions(
     payload: QuestionBatchImport,
-    staff: User = Depends(require_staff),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> BatchImportResult:
     created: list[Question] = []
     errors: list[dict[str, object]] = []
     for index, item in enumerate(payload.questions):
         try:
-            _validate_links(db, item)
-            question = Question(**item.model_dump(), created_by=staff.id)
+            _validate_links(db, item, current_user.id)
+            question = Question(**item.model_dump(), created_by=current_user.id)
             db.add(question)
             db.flush()
             created.append(question)
@@ -133,27 +140,24 @@ def get_question(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Question:
-    question = _question_or_404(db, question_id)
-    if current_user.role == UserRole.student and question.status != "approved":
-        raise HTTPException(status_code=404, detail="题目不存在")
-    return question
+    return owned_question_or_404(db, question_id, current_user.id)
 
 
 @router.put("/{question_id}", response_model=QuestionRead)
 def update_question(
     question_id: int,
     payload: QuestionUpdate,
-    _: User = Depends(require_staff),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Question:
-    question = _question_or_404(db, question_id)
+    question = owned_question_or_404(db, question_id, current_user.id)
     changes = payload.model_dump(exclude_unset=True)
     merged = QuestionUpdate(
         textbook_id=changes.get("textbook_id", question.textbook_id),
         chapter_id=changes.get("chapter_id", question.chapter_id),
         knowledge_point_id=changes.get("knowledge_point_id", question.knowledge_point_id),
     )
-    _validate_links(db, merged)
+    _validate_links(db, merged, current_user.id)
     for key, value in changes.items():
         setattr(question, key, value)
     db.commit()
@@ -164,9 +168,9 @@ def update_question(
 @router.delete("/{question_id}", status_code=204)
 def delete_question(
     question_id: int,
-    _: User = Depends(require_staff),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    db.delete(_question_or_404(db, question_id))
+    db.delete(owned_question_or_404(db, question_id, current_user.id))
     db.commit()
     return Response(status_code=204)
