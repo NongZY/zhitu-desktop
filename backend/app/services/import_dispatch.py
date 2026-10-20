@@ -13,6 +13,7 @@ from app.worker import process_textbook_pdf
 logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _executor: ThreadPoolExecutor | None = None
+_sealed = False
 
 
 def _fail(task_id: str, message: str) -> None:
@@ -39,6 +40,8 @@ def enqueue_local_import(task_id: str) -> None:
     global _executor
     try:
         with _lock:
+            if _sealed:
+                raise RuntimeError("closing")
             if _executor is None:
                 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="local-pdf")
             _executor.submit(_run, task_id)
@@ -47,6 +50,8 @@ def enqueue_local_import(task_id: str) -> None:
 
 
 def recover_interrupted_imports() -> None:
+    global _sealed
+    _sealed = False
     with SessionLocal() as db:
         ids = list(db.scalars(select(ImportTask.id).where(
             ImportTask.status.in_(["queued", "processing"])
@@ -55,9 +60,17 @@ def recover_interrupted_imports() -> None:
         _fail(task_id, "上次课本整理因程序关闭而中断，请重新上传；原有学习记录仍保留。")
 
 
-def shutdown_local_imports(wait: bool = True) -> None:
-    global _executor
+def active_import_count() -> int:
+    from sqlalchemy import func
+    with SessionLocal() as db:
+        return db.scalar(select(func.count()).select_from(ImportTask).where(
+            ImportTask.status.in_(["queued", "processing"]))) or 0
+
+
+def shutdown_local_imports(wait: bool = True, *, seal: bool = False) -> None:
+    global _executor, _sealed
     with _lock:
+        _sealed = _sealed or seal
         executor, _executor = _executor, None
     if executor is not None:
-        executor.shutdown(wait=wait)
+        executor.shutdown(wait=wait, cancel_futures=seal)
