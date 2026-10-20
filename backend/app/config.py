@@ -4,6 +4,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.desktop.profile import current_profile
+
 
 class Settings(BaseSettings):
     app_name: str = "智能自适应学习系统 API"
@@ -51,8 +53,27 @@ class Settings(BaseSettings):
         return Path(self.upload_dir).resolve()
 
 
+class DesktopSettings(Settings):
+    model_config = SettingsConfigDict(env_file=None, extra="ignore")
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings,
+                                   dotenv_settings, file_secret_settings):
+        return (init_settings,)
+
+
 @lru_cache
 def get_settings() -> Settings:
+    profile = current_profile()
+    if profile is not None:
+        profile.data_dir.mkdir(parents=True, exist_ok=True)
+        return DesktopSettings(
+            app_name="知途", local_mode=True, debug=False, api_prefix="/api/v1",
+            database_url=f"sqlite:///{(profile.data_dir / 'learning.db').as_posix()}",
+            upload_dir=str(profile.data_dir / "uploads"), cors_origins=profile.origin,
+            redis_url="", celery_broker_url="memory://", celery_result_backend="cache+memory://",
+            celery_task_always_eager=True, minio_endpoint=None, llm_api_url=None, llm_api_key=None,
+        )
     return Settings()
 
 
