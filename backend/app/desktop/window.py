@@ -1,13 +1,14 @@
 """EdgeChromium boundary and the two-method, non-secret desktop bridge."""
-from collections.abc import MutableMapping
+
 import copy
 import json
 import threading
-from typing import Literal, Protocol
+import webbrowser
+from collections.abc import MutableMapping
 from types import SimpleNamespace
+from typing import Literal, Protocol
 from urllib.parse import urlsplit
 from uuid import uuid4
-import webbrowser
 
 
 class NativeRequest(Protocol):
@@ -19,9 +20,15 @@ class NativeRequest(Protocol):
 def _same_origin(uri: str, origin: str) -> bool:
     try:
         parsed, trusted = urlsplit(uri), urlsplit(origin)
-        return (parsed.scheme == "http" and parsed.netloc == trusted.netloc
-                and trusted.hostname == "127.0.0.1" and parsed.hostname == "127.0.0.1"
-                and not parsed.username and not parsed.password and parsed.port == trusted.port)
+        return (
+            parsed.scheme == "http"
+            and parsed.netloc == trusted.netloc
+            and trusted.hostname == "127.0.0.1"
+            and parsed.hostname == "127.0.0.1"
+            and not parsed.username
+            and not parsed.password
+            and parsed.port == trusted.port
+        )
     except ValueError:
         return False
 
@@ -35,12 +42,20 @@ def inject_desktop_header(request: NativeRequest, origin: str, token: str) -> No
         request.headers["X-ZhiTu-Desktop-Token"] = token
 
 
-def handle_navigation(uri: str, is_user_initiated: bool, *, origin: str) -> Literal["allow", "external", "deny"]:
+def handle_navigation(
+    uri: str, is_user_initiated: bool, *, origin: str
+) -> Literal["allow", "external", "deny"]:
     if _same_origin(uri, origin):
         return "allow"
     try:
         parsed = urlsplit(uri)
-        if is_user_initiated and parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username and not parsed.password:
+        if (
+            is_user_initiated
+            and parsed.scheme in {"http", "https"}
+            and parsed.hostname
+            and not parsed.username
+            and not parsed.password
+        ):
             return "external"
     except ValueError:
         pass
@@ -79,7 +94,11 @@ class CloseCoordinator:
         self.pending_request = None
 
     def respond_close(self, request_id, decision):
-        if request_id == self.pending_request and decision in {"ready", "stay", "discard"} and not self._response.is_set():
+        if (
+            request_id == self.pending_request
+            and decision in {"ready", "stay", "discard"}
+            and not self._response.is_set()
+        ):
             self._decision = decision
             self._response.set()
 
@@ -100,7 +119,9 @@ class CloseCoordinator:
             except Exception:
                 pass
             if not self._response.wait(self._timeout):
-                if not self._ask("未能确认保存", "界面没有回应，最近的位置或作答可能未保存。仍要退出吗？"):
+                if not self._ask(
+                    "未能确认保存", "界面没有回应，最近的位置或作答可能未保存。仍要退出吗？"
+                ):
                     return
             elif self._decision == "stay":
                 return
@@ -110,7 +131,10 @@ class CloseCoordinator:
                 active = 0
                 if not self._ask("本地服务已中断", "可能有记录尚未保存。要关闭并稍后重新启动吗？"):
                     return
-            if active and not self._ask("教材还在整理", "要取消整理并退出吗？选择取消可留在软件中继续等待。已保存的资料仍保留。"):
+            if active and not self._ask(
+                "教材还在整理",
+                "要取消整理并退出吗？选择取消可留在软件中继续等待。已保存的资料仍保留。",
+            ):
                 return
             if not self._host.stop().exited:
                 return
@@ -150,7 +174,9 @@ def install_native_guards(window, host, lease):
 
         def synchronous_request(sender, args):
             before = {str(h.Key): str(h.Value) for h in args.Request.Headers.GetEnumerator()}
-            request = SimpleNamespace(url=str(args.Request.Uri), method=str(args.Request.Method), headers=dict(before))
+            request = SimpleNamespace(
+                url=str(args.Request.Uri), method=str(args.Request.Method), headers=dict(before)
+            )
             host.authorize_request(request)
             for key in before:
                 if key not in request.headers:
@@ -165,8 +191,12 @@ def install_native_guards(window, host, lease):
 
         def new_window(sender, args):
             args.Handled = True
-            if handle_navigation(str(args.Uri), bool(args.IsUserInitiated), origin=origin) == "external":
+            if (
+                handle_navigation(str(args.Uri), bool(args.IsUserInitiated), origin=origin)
+                == "external"
+            ):
                 webbrowser.open(str(args.Uri))
+
         core.NewWindowRequested += new_window
         core.Settings.AreDevToolsEnabled = False
         core.Settings.AreDefaultContextMenusEnabled = False
@@ -180,22 +210,37 @@ def install_native_guards(window, host, lease):
 
 def create_desktop_window(host, lease):
     import webview
-    webview.settings.update(ALLOW_FILE_URLS=False, ALLOW_DOWNLOADS=False,
-                            OPEN_EXTERNAL_LINKS_IN_BROWSER=False, REMOTE_DEBUGGING_PORT=None,
-                            IGNORE_SSL_ERRORS=False)
+
+    webview.settings.update(
+        ALLOW_FILE_URLS=False,
+        ALLOW_DOWNLOADS=False,
+        OPEN_EXTERNAL_LINKS_IN_BROWSER=False,
+        REMOTE_DEBUGGING_PORT=None,
+        IGNORE_SSL_ERRORS=False,
+    )
     bridge = DesktopBridge(host)
-    window = webview.create_window("知途 · 本地学习空间", "about:blank", js_api=bridge,
-                                   width=1280, height=850, min_size=(900, 650), text_select=True)
+    window = webview.create_window(
+        "知途 · 本地学习空间",
+        "about:blank",
+        js_api=bridge,
+        width=1280,
+        height=850,
+        min_size=(900, 650),
+        text_select=True,
+    )
     closer = CloseCoordinator(host, window, window.create_confirmation_dialog)
     bridge._attach(window, closer)
     window.events.request_sent += host.authorize_request
+
     def before_show():
         try:
             install_native_guards(window, host, lease)
         except Exception:
             from app.desktop.instance import show_native_error
+
             show_native_error("无法建立安全的本地窗口，请确认已安装 WebView2。学习数据仍保留。")
             window.destroy()
+
     window.events.before_show += before_show
     window.events.closing += closer.request_close
     return window

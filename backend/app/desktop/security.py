@@ -1,4 +1,5 @@
 """Capability boundary for every loopback HTTP request, including static assets."""
+
 import hmac
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -10,9 +11,11 @@ from sqlalchemy.orm import Session
 from app.desktop.profile import DesktopProfile, current_profile
 
 TOKEN_HEADER = "X-ZhiTu-Desktop-Token"
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-       "img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self'; "
-       "object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' blob: data:; font-src 'self' data:; connect-src 'self'; "
+    "object-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+)
 
 
 class DesktopBoundary:
@@ -26,21 +29,39 @@ class DesktopBoundary:
                 return
             await self.app(scope, receive, send)
             return
+
         def values(name):
             return [v.decode("latin1") for k, v in scope["headers"] if k.lower() == name]
-        tokens, hosts, origins = values(b"x-zhitu-desktop-token"), values(b"host"), values(b"origin")
-        valid = (len(tokens) == 1 and hmac.compare_digest(tokens[0], self.profile.session_token)
-                 and hosts == [urlsplit(self.profile.origin).netloc]
-                 and (not origins or origins == [self.profile.origin]))
+
+        tokens, hosts, origins = (
+            values(b"x-zhitu-desktop-token"),
+            values(b"host"),
+            values(b"origin"),
+        )
+        valid = (
+            len(tokens) == 1
+            and hmac.compare_digest(tokens[0], self.profile.session_token)
+            and hosts == [urlsplit(self.profile.origin).netloc]
+            and (not origins or origins == [self.profile.origin])
+        )
         if not valid:
-            await JSONResponse({"detail": "本地连接无效，请重新启动软件"}, status_code=403)(scope, receive, send)
+            await JSONResponse({"detail": "本地连接无效，请重新启动软件"}, status_code=403)(
+                scope, receive, send
+            )
             return
+
         async def secure_send(message):
             if message["type"] == "http.response.start":
-                message.setdefault("headers", []).extend([
-                    (b"content-security-policy", CSP.encode()), (b"x-content-type-options", b"nosniff"),
-                    (b"referrer-policy", b"no-referrer"), (b"cache-control", b"no-store")])
+                message.setdefault("headers", []).extend(
+                    [
+                        (b"content-security-policy", CSP.encode()),
+                        (b"x-content-type-options", b"nosniff"),
+                        (b"referrer-policy", b"no-referrer"),
+                        (b"cache-control", b"no-store"),
+                    ]
+                )
             await send(message)
+
         await self.app(scope, receive, secure_send)
 
 
@@ -57,6 +78,7 @@ def configure_desktop_security(application: FastAPI, profile: DesktopProfile) ->
         if user is None or not user.is_active:
             raise HTTPException(503, "本地学习空间不可用，请保留数据并重启软件")
         return user
+
     application.dependency_overrides[get_current_user] = get_desktop_user
     application.add_middleware(DesktopBoundary, profile=profile)
 
@@ -65,6 +87,7 @@ def create_desktop_app(profile: DesktopProfile) -> FastAPI:
     if current_profile() is not profile:
         raise RuntimeError("桌面配置未在此进程正确安装")
     from app.main import create_app
+
     return create_app(desktop_profile=profile)
 
 

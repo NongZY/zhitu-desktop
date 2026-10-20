@@ -13,8 +13,13 @@ def desktop_service(tmp_path):
 
 def test_desktop_token_applies_to_all_paths(desktop_service):
     s = desktop_service
-    for path in ("/", "/health", "/api/v1/health", "/api/v1/textbooks",
-                 "/api/v1/textbooks/1/pages/1/image"):
+    for path in (
+        "/",
+        "/health",
+        "/api/v1/health",
+        "/api/v1/textbooks",
+        "/api/v1/textbooks/1/pages/1/image",
+    ):
         assert s.get(path, authenticated=False).status_code == 403
         assert s.get(path, headers={"X-ZhiTu-Desktop-Token": "old-launch"}).status_code == 403
     assert s.get("/api/v1/textbooks?user_id=999").json()["total"] == 0
@@ -27,8 +32,15 @@ def test_desktop_rejects_host_origin_and_has_no_login_or_docs(desktop_service):
     assert s.get("/health", headers={"Host": "localhost:1234"}).status_code == 403
     assert s.get("/health", headers={"Origin": "https://evil.invalid"}).status_code == 403
     assert s.get("/health", headers={"Origin": s.origin}).status_code == 200
-    for path in ("/api/v1/auth/me", "/api/v1/auth/login", "/docs", "/redoc", "/openapi.json",
-                 "/..%2fworkspace.json", "/api/v1/not-a-route"):
+    for path in (
+        "/api/v1/auth/me",
+        "/api/v1/auth/login",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        "/..%2fworkspace.json",
+        "/api/v1/not-a-route",
+    ):
         assert s.get(path).status_code == 404, path
     assert s.token not in str(s.ready)
     assert s.token not in "".join(s.errors)

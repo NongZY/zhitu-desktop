@@ -1,15 +1,16 @@
 """Own exactly one sidecar. Its capability travels only through anonymous stdin."""
-from dataclasses import dataclass
+
 import ctypes
-from ctypes import wintypes
 import json
 import os
-from pathlib import Path
 import queue
 import secrets
 import subprocess
 import sys
 import threading
+from ctypes import wintypes
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
@@ -25,34 +26,69 @@ class ShutdownReport:
 
 class _WindowsJob:
     """KILL_ON_JOB_CLOSE keeps descendants bound to this host's lifetime."""
+
     def __init__(self, process):
         self.handle = None
         if os.name != "nt":
             return
+
         class Basic(ctypes.Structure):
-            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
-                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
-                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
-                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
-                        ("SchedulingClass", wintypes.DWORD)]
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
         class Counters(ctypes.Structure):
-            _fields_ = [(name, ctypes.c_uint64) for name in ("ReadOperationCount", "WriteOperationCount",
-                        "OtherOperationCount", "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+            _fields_ = [
+                (name, ctypes.c_uint64)
+                for name in (
+                    "ReadOperationCount",
+                    "WriteOperationCount",
+                    "OtherOperationCount",
+                    "ReadTransferCount",
+                    "WriteTransferCount",
+                    "OtherTransferCount",
+                )
+            ]
+
         class Limits(ctypes.Structure):
-            _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", Counters),
-                        ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
-                        ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+            _fields_ = [
+                ("BasicLimitInformation", Basic),
+                ("IoInfo", Counters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
         self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         self.kernel.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
         self.kernel.CreateJobObjectW.restype = wintypes.HANDLE
-        self.kernel.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        self.kernel.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
         self.kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
         self.kernel.CloseHandle.argtypes = [wintypes.HANDLE]
         self.handle = self.kernel.CreateJobObjectW(None, None)
         limits = Limits()
         limits.BasicLimitInformation.LimitFlags = 0x2000
-        if (not self.handle or not self.kernel.SetInformationJobObject(self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits))
-                or not self.kernel.AssignProcessToJobObject(self.handle, int(process._handle))):
+        if (
+            not self.handle
+            or not self.kernel.SetInformationJobObject(
+                self.handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)
+            )
+            or not self.kernel.AssignProcessToJobObject(self.handle, int(process._handle))
+        ):
             self.close()
             raise RuntimeError("无法保护本地服务进程，已停止启动")
 
@@ -88,12 +124,20 @@ class DesktopHost:
             raise RuntimeError("本地服务已启动")
         backend = Path(__file__).resolve().parents[2]
         # -I ignores Python injection variables; desktop Settings separately excludes all external config.
-        self._process = subprocess.Popen([sys.executable, "-I", "-m", "app.desktop.service"], cwd=backend,
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding="utf-8", bufsize=1,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+        self._process = subprocess.Popen(
+            [sys.executable, "-I", "-m", "app.desktop.service"],
+            cwd=backend,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
         try:
             self._job = _WindowsJob(self._process)
+
             def receive():
                 try:
                     for line in self._process.stdout:
@@ -103,21 +147,30 @@ class DesktopHost:
                             self._frames.put({"type": "error"})
                 finally:
                     self._frames.put({"type": "eof"})
+
             def drain_errors():
                 # Drain without recording potentially sensitive library diagnostics.
                 for _ in self._process.stderr:
                     pass
+
             threading.Thread(target=receive, daemon=True, name="desktop-protocol").start()
             threading.Thread(target=drain_errors, daemon=True, name="desktop-diagnostics").start()
-            self._send(dict(type="start", schemaVersion=1, dataDir=str(data_dir.resolve()),
-                            staticDir=str(static_dir.resolve()), token=self._token))
+            self._send(
+                dict(
+                    type="start",
+                    schemaVersion=1,
+                    dataDir=str(data_dir.resolve()),
+                    staticDir=str(static_dir.resolve()),
+                    token=self._token,
+                )
+            )
             frame = self._frames.get(timeout=self.startup_timeout)
             if frame.get("type") != "ready":
                 raise RuntimeError("本地服务无法启动，请检查数据目录和软件界面文件")
             self._context = frame["context"]
             return self.context
         except Exception as exc:
-            self.stop(.2)
+            self.stop(0.2)
             raise RuntimeError("本地服务未能就绪，请保留数据并重新启动软件") from exc
 
     def status(self) -> dict:
@@ -134,7 +187,10 @@ class DesktopHost:
 
     def authorize_request(self, request) -> None:
         from app.desktop.window import inject_desktop_header
-        inject_desktop_header(request, self.context["apiBaseUrl"].removesuffix("/api/v1"), self._token)
+
+        inject_desktop_header(
+            request, self.context["apiBaseUrl"].removesuffix("/api/v1"), self._token
+        )
 
     def stop(self, timeout_seconds: float = 5) -> ShutdownReport:
         with self._lock:

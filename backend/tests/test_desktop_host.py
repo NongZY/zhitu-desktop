@@ -1,10 +1,9 @@
-from pathlib import Path
 import socket
 import subprocess
 import sys
-import pytest
-import httpx
 
+import httpx
+import pytest
 from app.desktop.host import DesktopHost
 
 
@@ -29,17 +28,20 @@ def test_host_owns_real_service_and_releases_port(tmp_path):
 
 def test_start_error_and_timeout_clean_up_only_owned_process(tmp_path, monkeypatch):
     from app.desktop import host as module
+
     real_popen = subprocess.Popen
     unrelated = real_popen([sys.executable, "-c", "import time; time.sleep(30)"])
+
     def stuck(*args, **kwargs):
         return real_popen([sys.executable, "-c", "import time; time.sleep(30)"], **kwargs)
+
     monkeypatch.setattr(module.subprocess, "Popen", stuck)
-    host = DesktopHost(startup_timeout=.05)
+    host = DesktopHost(startup_timeout=0.05)
     try:
         with pytest.raises(RuntimeError):
             host.start(tmp_path, tmp_path)
-        assert host.stop(.05).exited
-        assert host.stop(.05).status == "forced"
+        assert host.stop(0.05).exited
+        assert host.stop(0.05).status == "forced"
         assert unrelated.poll() is None
     finally:
         unrelated.terminate()
@@ -53,14 +55,15 @@ def test_failed_static_start_exits_instead_of_orphaning(tmp_path):
     assert host.stop().exited
 
 
-@pytest.mark.skipif(sys.platform != 'win32', reason='Windows Job Object proof')
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Job Object proof")
 def test_host_crash_closes_job_and_service(tmp_path):
     import json
     import time
-    static = tmp_path / 'ui'
+
+    static = tmp_path / "ui"
     static.mkdir()
-    (static / 'index.html').write_text('desktop')
-    code = '''
+    (static / "index.html").write_text("desktop")
+    code = """
 from app.desktop.host import DesktopHost
 from pathlib import Path
 import json, os, sys
@@ -68,15 +71,19 @@ h = DesktopHost()
 c = h.start(Path(sys.argv[1]), Path(sys.argv[2]))
 print(json.dumps(c), flush=True)
 os._exit(0)
-'''
-    result = subprocess.run([sys.executable, '-I', '-c', code, str(tmp_path / 'data'), str(static)],
-                            capture_output=True, text=True, timeout=20)
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code, str(tmp_path / "data"), str(static)],
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
     assert result.returncode == 0, result.stderr
-    port = int(json.loads(result.stdout)['apiBaseUrl'].split(':')[2].split('/')[0])
+    port = int(json.loads(result.stdout)["apiBaseUrl"].split(":")[2].split("/")[0])
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
         with socket.socket() as sock:
-            if sock.connect_ex(('127.0.0.1', port)) != 0:
+            if sock.connect_ex(("127.0.0.1", port)) != 0:
                 return
-        time.sleep(.05)
-    pytest.fail('owned service survived host crash')
+        time.sleep(0.05)
+    pytest.fail("owned service survived host crash")

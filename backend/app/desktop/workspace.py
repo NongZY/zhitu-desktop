@@ -1,12 +1,13 @@
 """Crash-recoverable local owner manifest. Never adopt an arbitrary old account."""
-from dataclasses import dataclass
+
 import json
 import os
-from pathlib import Path
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import User
@@ -38,8 +39,7 @@ def ensure_workspace(db: Session, manifest_path: Path) -> WorkspaceIdentity:
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             uid = manifest["id"]
-            if (manifest["schemaVersion"] != 1 or str(UUID(uid)) != uid
-                    or "ownerId" not in manifest):
+            if manifest["schemaVersion"] != 1 or str(UUID(uid)) != uid or "ownerId" not in manifest:
                 raise ValueError()
             owner_id = manifest["ownerId"]
             if owner_id is not None and (type(owner_id) is not int or owner_id < 1):

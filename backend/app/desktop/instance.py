@@ -1,9 +1,10 @@
 """Per-data-directory OS lock, with non-secret activation metadata only."""
-from dataclasses import dataclass
+
 import ctypes
-from ctypes import wintypes
 import json
 import os
+from ctypes import wintypes
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -48,14 +49,17 @@ class InstanceLease:
         data_dir.mkdir(parents=True, exist_ok=True)
         stream = (data_dir / "instance.lock").open("a+b")
         if stream.seek(0, 2) == 0:
-            stream.write(b"\0"); stream.flush()
+            stream.write(b"\0")
+            stream.flush()
         stream.seek(0)
         try:
             if os.name == "nt":
                 import msvcrt
+
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
+
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             stream.close()
@@ -78,8 +82,10 @@ class InstanceLease:
         self._stream.seek(0)
         if os.name == "nt":
             import msvcrt
+
             msvcrt.locking(self._stream.fileno(), msvcrt.LK_UNLCK, 1)
         else:
             import fcntl
+
             fcntl.flock(self._stream.fileno(), fcntl.LOCK_UN)
         self._stream.close()

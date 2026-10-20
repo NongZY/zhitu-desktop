@@ -1,5 +1,5 @@
 import socket
-import subprocess
+
 from desktop_helpers import RunningDesktop
 
 
@@ -25,12 +25,15 @@ def test_restart_keeps_owner_but_rotates_secret(tmp_path):
     try:
         assert second.ready["context"]["workspace"] == owner
         assert second.token != old_token
-        assert second.get("/health", headers={"X-ZhiTu-Desktop-Token": old_token}).status_code == 403
+        assert (
+            second.get("/health", headers={"X-ZhiTu-Desktop-Token": old_token}).status_code == 403
+        )
     finally:
         second.close()
 
 
 def test_missing_static_fails_without_secret_disclosure(tmp_path):
     import pytest
+
     with pytest.raises(AssertionError, match="not ready"):
         RunningDesktop(tmp_path, tmp_path / "missing")
