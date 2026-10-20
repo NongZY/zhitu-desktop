@@ -3,6 +3,7 @@
 import copy
 import json
 import threading
+import time
 import webbrowser
 from collections.abc import MutableMapping
 from types import SimpleNamespace
@@ -88,42 +89,75 @@ class CloseCoordinator:
         self._host, self._window, self._ask = host, window, ask
         self._timeout = frontend_timeout
         self._lock = threading.Lock()
+        self._state_lock = threading.Lock()
         self._response = threading.Event()
-        self._decision = "stay"
+        self._decision = None
+        self._last_activity = 0.0
+        self._accepting = False
         self._allow = False
         self.pending_request = None
 
     def respond_close(self, request_id, decision):
-        if (
-            request_id == self.pending_request
-            and decision in {"ready", "stay", "discard"}
-            and not self._response.is_set()
-        ):
-            self._decision = decision
-            self._response.set()
+        with self._state_lock:
+            if (
+                self._accepting
+                and request_id == self.pending_request
+                and decision in {"ready", "stay", "discard", "pending"}
+                and self._decision is None
+            ):
+                if decision == "pending":
+                    self._last_activity = time.monotonic()
+                else:
+                    self._decision = decision
+                self._response.set()
 
     def request_close(self):
         if self._allow:
             return True
         if self._lock.acquire(blocking=False):
-            self.pending_request = str(uuid4())
-            self._response.clear()
-            threading.Thread(target=self._prepare, daemon=True, name="desktop-close").start()
+            with self._state_lock:
+                request_id = self.pending_request = str(uuid4())
+                self._decision = None
+                self._last_activity = time.monotonic()
+                self._accepting = True
+                self._response.clear()
+            threading.Thread(
+                target=self._prepare, args=(request_id,), daemon=True, name="desktop-close"
+            ).start()
         return False
 
-    def _prepare(self):
-        try:
-            script = f"window.dispatchEvent(new CustomEvent('zhitu:close-request', {{detail: {json.dumps(self.pending_request)}}}));"
+    def _dispatch(self, event_name, request_id):
+        script = f"window.dispatchEvent(new CustomEvent({json.dumps(event_name)}, {{detail: {json.dumps(request_id)}}}));"
+
+        def send():
             try:
                 self._window.run_js(script)
             except Exception:
                 pass
-            if not self._response.wait(self._timeout):
+
+        # pywebview run_js can block on a frozen renderer. It must never own
+        # the watchdog thread or postpone its deadline.
+        threading.Thread(target=send, daemon=True, name="desktop-close-dispatch").start()
+
+    def _prepare(self, request_id):
+        try:
+            self._dispatch("zhitu:close-request", request_id)
+            while True:
+                with self._state_lock:
+                    decision = self._decision
+                    remaining = self._timeout - (time.monotonic() - self._last_activity)
+                    self._response.clear()
+                    if decision is not None or remaining <= 0:
+                        self._accepting = False
+                        break
+                self._response.wait(remaining)
+            if decision is None:
+                self._dispatch("zhitu:close-cancel", request_id)
                 if not self._ask(
                     "未能确认保存", "界面没有回应，最近的位置或作答可能未保存。仍要退出吗？"
                 ):
                     return
-            elif self._decision == "stay":
+            elif decision == "stay":
                 return
             try:
                 active = self._host.status()["active_imports"]
@@ -141,7 +175,10 @@ class CloseCoordinator:
             self._allow = True
             self._window.destroy()
         finally:
-            self.pending_request = None
+            with self._state_lock:
+                self._accepting = False
+                self.pending_request = None
+            self._dispatch("zhitu:close-cancel", request_id)
             self._lock.release()
 
 

@@ -32,7 +32,7 @@ afterEach(() => { wrapper?.unmount(); delete window.pywebview; vi.restoreAllMock
 describe('混合题型练习', () => {
   it('关闭未提交练习说明不保存，可继续或放弃，不能自动交卷', async () => {
     const decisions: string[] = []
-    window.pywebview = { api: { get_context: async () => ({}), respond_close: async (_id, value) => { decisions.push(value) } } }
+    window.pywebview = { api: { get_context: async () => ({}), respond_close: async (_id, value) => { if (value !== 'pending') decisions.push(value) } } }
     wrapper = mount(ExamTakeView, { global: { plugins: [ElementPlus] } })
     await flushPromises()
     vi.mocked(ElMessageBox.confirm).mockRejectedValueOnce('cancel')

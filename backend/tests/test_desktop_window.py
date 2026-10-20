@@ -1,4 +1,5 @@
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -140,3 +141,48 @@ def test_close_timeout_or_active_import_never_silently_exits():
             closer.respond_close(closer.pending_request, "ready")
         assert not window.destroyed.wait(0.15)
         assert prompts
+
+
+def test_blocked_script_dispatch_does_not_block_native_watchdog():
+    release, prompted, cancelled = threading.Event(), threading.Event(), threading.Event()
+
+    class BlockedWindow(FakeWindow):
+        def run_js(self, script):
+            if "close-request" in script:
+                self.requested.set()
+                release.wait(2)
+            else:
+                cancelled.set()
+
+    window = BlockedWindow()
+    closer = CloseCoordinator(
+        fake_host(), window, lambda *args: prompted.set() or False, frontend_timeout=0.05
+    )
+    try:
+        closer.request_close()
+        assert window.requested.wait(1)
+        retired = closer.pending_request
+        assert prompted.wait(0.4), "run_js must not postpone the native deadline"
+        assert cancelled.wait(0.4)
+        closer.respond_close(retired, "discard")
+        assert not window.destroyed.is_set()
+    finally:
+        release.set()
+
+
+def test_confirmation_heartbeat_keeps_request_live_but_cannot_override_final():
+    prompted = threading.Event()
+    window = FakeWindow()
+    closer = CloseCoordinator(
+        fake_host(), window, lambda *args: prompted.set() or False, frontend_timeout=0.25
+    )
+    closer.request_close()
+    assert window.requested.wait(1)
+    request_id = closer.pending_request
+    for _ in range(4):
+        time.sleep(0.1)
+        closer.respond_close(request_id, "pending")
+        assert not prompted.is_set()
+    closer.respond_close(request_id, "discard")
+    closer.respond_close(request_id, "pending")
+    assert window.destroyed.wait(1)

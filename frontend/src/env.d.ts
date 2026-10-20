@@ -12,6 +12,6 @@ interface ImportMeta {
 interface Window {
   pywebview?: { api: {
     get_context: () => Promise<unknown>
-    respond_close: (requestId: string, decision: 'ready' | 'stay' | 'discard') => Promise<void>
+    respond_close: (requestId: string, decision: 'ready' | 'stay' | 'discard' | 'pending') => Promise<void>
   } }
 }

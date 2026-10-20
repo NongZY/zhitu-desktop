@@ -9,7 +9,7 @@ import OriginalPdfReader from '../components/OriginalPdfReader.vue'
 import { textbookApi, type Chapter, type ChapterContent, type TextbookStructure } from '../api'
 import { getApiErrorMessage } from '../api/http'
 import { useWorkspaceStore } from '../stores/workspace'
-import { registerCloseGuard, type CloseDecision } from '../runtime/close'
+import { registerCloseGuard, type CloseDecision, type CloseControl } from '../runtime/close'
 import { useReadingProgress } from '../composables/useReadingProgress'
 import { resolveReadingTarget } from '../utils/readingNavigation'
 
@@ -29,12 +29,15 @@ const needsPositionChoice = ref(false)
 const displayedPage = ref<number | null>(null)
 const progressState = useReadingProgress({ bookId, userId, documentRevision })
 const { status: readingStatus, error: progressError } = progressState
-async function prepareLeave(): Promise<CloseDecision> {
+async function prepareLeave(control?: CloseControl): Promise<CloseDecision> {
   if (await progressState.flush()) return 'ready'
-  try {
-    await ElMessageBox.confirm('阅读位置尚未保存。可以留在这里重试，或放弃这次位置后离开；已保存的资料不会删除。', '位置未保存', { confirmButtonText: '放弃位置并离开', cancelButtonText: '留在这里', type: 'warning' })
-    return 'discard'
-  } catch { return 'stay' }
+  const ask = async (): Promise<CloseDecision> => {
+    try {
+      await ElMessageBox.confirm('阅读位置尚未保存。可以留在这里重试，或放弃这次位置后离开；已保存的资料不会删除。', '位置未保存', { confirmButtonText: '放弃位置并离开', cancelButtonText: '留在这里', type: 'warning' })
+      return 'discard'
+    } catch { return 'stay' }
+  }
+  return control ? control.confirm(ask, () => ElMessageBox.close()) : ask()
 }
 const unregisterClose = registerCloseGuard(prepareLeave)
 onBeforeRouteLeave(async () => (await prepareLeave()) !== 'stay')
