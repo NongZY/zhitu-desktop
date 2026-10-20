@@ -12,11 +12,12 @@ export function useReadingProgress(input: { bookId: Ref<number>; userId: Ref<num
   let pending: Position | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   let controller: AbortController | undefined
+  let inFlight: Promise<void> | null = null
 
   function reset() {
     generation++; controller?.abort(); clearTimeout(timer)
     progress.value = null; status.value = 'idle'; error.value = ''
-    pending = null; loaded = false; busy = false; ready = false
+    pending = null; loaded = false; busy = false; ready = false; inFlight = null
   }
   const stop = watch([input.bookId, input.userId], reset, { flush: 'sync' })
 
@@ -35,7 +36,7 @@ export function useReadingProgress(input: { bookId: Ref<number>; userId: Ref<num
     }
   }
 
-  async function save() {
+  async function performSave() {
     if (disposed || !loaded || busy || !ready || !pending || !input.documentRevision.value || status.value === 'conflict') return
     const position = pending; pending = null; ready = false; busy = true
     const request = generation
@@ -58,9 +59,46 @@ export function useReadingProgress(input: { bookId: Ref<number>; userId: Ref<num
     } finally {
       if (request === generation && !disposed) {
         busy = false
-        if (status.value === 'saving' && ready && pending) void save()
       }
     }
+  }
+
+  function save(): Promise<void> {
+    if (inFlight) return inFlight
+    const request = generation
+    const task = performSave().finally(() => {
+      if (inFlight === task) inFlight = null
+      if (request === generation && !disposed && status.value === 'saving' && ready && pending) void save()
+    })
+    inFlight = task
+    return task
+  }
+
+  async function flush(): Promise<boolean> {
+    const failed = () => status.value === 'conflict' || status.value === 'error'
+    clearTimeout(timer)
+    if (disposed || !loaded || status.value === 'conflict') return false
+    const request = generation
+    const drain = async () => {
+      if (inFlight) await inFlight
+      if (request !== generation || disposed || status.value === 'conflict' || status.value === 'error') {
+        // A failed in-flight write must be acknowledged, not silently retried on close.
+        return false
+      }
+      while (pending || inFlight) {
+        if (request !== generation || disposed) return false
+        ready = true
+        await save()
+        if (failed()) return false
+      }
+      return true
+    }
+    let timeout: ReturnType<typeof setTimeout>
+    const result = await Promise.race([drain(), new Promise<boolean>(resolve => {
+      timeout = setTimeout(() => resolve(false), 6000)
+    })])
+    clearTimeout(timeout!)
+    return result
   }
 
   function recordDisplayed(page: number, chapterId: number | null) {
@@ -84,5 +122,5 @@ export function useReadingProgress(input: { bookId: Ref<number>; userId: Ref<num
     return progress.value
   }
   function dispose() { reset(); disposed = true; stop() }
-  return { progress, status, error, load, recordDisplayed, retry, reload, dispose }
+  return { progress, status, error, load, recordDisplayed, retry, reload, flush, dispose }
 }

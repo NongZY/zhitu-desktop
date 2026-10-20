@@ -5,7 +5,7 @@ import DashboardView from './DashboardView.vue'
 
 const api = vi.hoisted(() => ({ home: vi.fn(), dashboard: vi.fn(), mastery: vi.fn(), push: vi.fn() }))
 vi.mock('../api', () => ({ readingApi: api, learningApi: api }))
-vi.mock('../stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1, name: '学习者' } }) }))
+vi.mock('../stores/workspace', () => ({ useWorkspaceStore: () => ({ ownerId: 17, label: '本地学习空间' }) }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: api.push }) }))
 let wrapper: VueWrapper | undefined
 beforeEach(() => {

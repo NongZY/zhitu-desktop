@@ -1,22 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ChatDotRound, CircleCheck, CirclePlus, Document, EditPen, Reading } from '@element-plus/icons-vue'
 import PageHeader from '../components/PageHeader.vue'
 import StatePanel from '../components/StatePanel.vue'
 import OriginalPdfReader from '../components/OriginalPdfReader.vue'
 import { textbookApi, type Chapter, type ChapterContent, type TextbookStructure } from '../api'
 import { getApiErrorMessage } from '../api/http'
-import { useAuthStore } from '../stores/auth'
+import { useWorkspaceStore } from '../stores/workspace'
+import { registerCloseGuard, type CloseDecision } from '../runtime/close'
 import { useReadingProgress } from '../composables/useReadingProgress'
 import { resolveReadingTarget } from '../utils/readingNavigation'
 
 const route = useRoute()
 const router = useRouter()
-const auth = useAuthStore()
+const workspace = useWorkspaceStore()
 const bookId = computed(() => Number(route.params.id))
-const userId = computed(() => auth.user ? Number(auth.user.id) : null)
+const userId = computed(() => workspace.ownerId)
 const documentRevision = ref<string | null>(null)
 const readerCount = ref(0)
 const readerPage = ref<number | null>(null)
@@ -28,6 +29,17 @@ const needsPositionChoice = ref(false)
 const displayedPage = ref<number | null>(null)
 const progressState = useReadingProgress({ bookId, userId, documentRevision })
 const { status: readingStatus, error: progressError } = progressState
+async function prepareLeave(): Promise<CloseDecision> {
+  if (await progressState.flush()) return 'ready'
+  try {
+    await ElMessageBox.confirm('阅读位置尚未保存。可以留在这里重试，或放弃这次位置后离开；已保存的资料不会删除。', '位置未保存', { confirmButtonText: '放弃位置并离开', cancelButtonText: '留在这里', type: 'warning' })
+    return 'discard'
+  } catch { return 'stay' }
+}
+const unregisterClose = registerCloseGuard(prepareLeave)
+onBeforeRouteLeave(async () => (await prepareLeave()) !== 'stay')
+onBeforeRouteUpdate(async (to, from) => to.params.id === from.params.id || (await prepareLeave()) !== 'stay')
+onUnmounted(unregisterClose)
 let readerRequest = 0
 let readerAbort: AbortController | undefined
 const loading = ref(true)

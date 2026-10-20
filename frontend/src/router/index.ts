@@ -1,13 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { useWorkspaceStore } from '../stores/workspace'
 
 const routes: RouteRecordRaw[] = [
-  {
-    path: '/auth',
-    name: 'auth',
-    component: () => import('../views/AuthView.vue'),
-    meta: { public: true, title: '登录' },
-  },
   {
     path: '/exam/:id/take',
     name: 'exam-take',
@@ -42,23 +36,7 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   document.title = `${String(to.meta.title || '学习平台')} · 知途`
-  const auth = useAuthStore()
-  if (to.meta.public) return auth.isAuthenticated ? '/dashboard' : true
-  if (!auth.isAuthenticated) return { path: '/auth', query: { redirect: to.fullPath } }
-  if (!auth.user) {
-    try {
-      await auth.fetchMe()
-    } catch {
-      return { path: '/auth', query: { redirect: to.fullPath } }
-    }
-  }
-  return true
-})
-
-window.addEventListener('auth:expired', () => {
-  const auth = useAuthStore()
-  auth.logout()
-  void router.replace({ path: '/auth', query: { redirect: router.currentRoute.value.fullPath } })
+  return useWorkspaceStore().ownerId !== null
 })
 
 export default router

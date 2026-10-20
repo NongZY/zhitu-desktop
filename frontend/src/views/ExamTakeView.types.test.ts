@@ -2,10 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ElementPlus, { ElMessageBox } from 'element-plus'
 import ExamTakeView from './ExamTakeView.vue'
+import { requestClose } from '../runtime/close'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), submit: vi.fn(), push: vi.fn() }))
 vi.mock('../api', () => ({ examApi: { get: api.get, submit: api.submit } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '7' } }), useRouter: () => ({ push: api.push }) }))
+vi.mock('vue-router', () => ({ onBeforeRouteLeave: vi.fn(), useRoute: () => ({ params: { id: '7' } }), useRouter: () => ({ push: api.push }) }))
 let wrapper: VueWrapper
 const questions = [
   { id: 1, stem: '选择正确答案', type: 'single_choice', options: [{ key: 'A', text: '一' }, { key: 'B', text: '二' }] },
@@ -27,8 +28,21 @@ beforeEach(() => {
       correct_answer: q.id === 3 ? false : '答案', is_correct: q.id === 5 ? null : true, score: q.id === 5 ? 0 : 5, max_score: 5 })),
   })
 })
-afterEach(() => { wrapper?.unmount(); vi.restoreAllMocks(); vi.useRealTimers() })
+afterEach(() => { wrapper?.unmount(); delete window.pywebview; vi.restoreAllMocks(); vi.useRealTimers() })
 describe('混合题型练习', () => {
+  it('关闭未提交练习说明不保存，可继续或放弃，不能自动交卷', async () => {
+    const decisions: string[] = []
+    window.pywebview = { api: { get_context: async () => ({}), respond_close: async (_id, value) => { decisions.push(value) } } }
+    wrapper = mount(ExamTakeView, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    vi.mocked(ElMessageBox.confirm).mockRejectedValueOnce('cancel')
+    await requestClose('exam-stay')
+    expect(decisions).toEqual(['stay'])
+    expect(ElMessageBox.confirm).toHaveBeenLastCalledWith(expect.stringContaining('当前作答不会保存'), expect.any(String), expect.any(Object))
+    await requestClose('exam-discard')
+    expect(decisions).toEqual(['stay', 'discard'])
+    expect(api.submit).not.toHaveBeenCalled()
+  })
   it('保留单选、多选、false 判断、填空、简答的答案格式', async () => {
     wrapper = mount(ExamTakeView, { global: { plugins: [ElementPlus] } })
     await flushPromises()

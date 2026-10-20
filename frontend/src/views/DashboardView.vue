@@ -8,10 +8,10 @@ import PageHeader from '../components/PageHeader.vue'
 import StatePanel from '../components/StatePanel.vue'
 import { learningApi, readingApi, type ReadingHome, type DashboardSummary, type MasteryItem } from '../api'
 import { getApiErrorMessage } from '../api/http'
-import { useAuthStore } from '../stores/auth'
+import { useWorkspaceStore } from '../stores/workspace'
 
 const router = useRouter()
-const auth = useAuthStore()
+const workspace = useWorkspaceStore()
 const loading = ref(true)
 const error = ref('')
 const summary = ref<DashboardSummary>({ textbook_count: 0, completed_exam_count: 0, average_score: 0, study_minutes: 0 })
@@ -35,7 +35,7 @@ async function loadReadingHome() {
     if (request === homeRequest) readingLoading.value = false
   }
 }
-watch(() => auth.user?.id, loadReadingHome)
+watch(() => workspace.ownerId, loadReadingHome)
 onUnmounted(() => { homeRequest++; homeAbort?.abort() })
 
 const greeting = computed(() => {
@@ -79,7 +79,7 @@ onMounted(() => { void load(); void loadReadingHome() })
 
 <template>
   <div>
-    <PageHeader eyebrow="Learning Overview" :title="`${greeting}，${auth.user?.name || '学习者'}`" description="今天也向前一步吧。系统会根据你的学习表现，持续优化下一次练习。">
+    <PageHeader eyebrow="Learning Overview" :title="`${greeting}，学习者`" description="今天也向前一步吧。系统会根据你的学习表现，持续优化下一次练习。">
       <template #actions><el-button type="primary" :icon="EditPen" @click="router.push('/exam/generate')">开始智能练习</el-button></template>
     </PageHeader>
 

@@ -5,12 +5,14 @@ import ElementPlus from 'element-plus'
 import TextbookDetailView from './TextbookDetailView.vue'
 
 const api = vi.hoisted(() => ({ structure: vi.fn(), content: vi.fn(), pageImage: vi.fn(), readerInfo: vi.fn(), search: vi.fn(), push: vi.fn(), replace: vi.fn(), query: {} as Record<string, string>, params: { id: '2' }, getProgress: vi.fn(), saveProgress: vi.fn() }))
+let leaveGuard: () => Promise<boolean>
 vi.mock('../api', () => ({
   textbookApi: { getStructure: api.structure, chapterContent: api.content, pageImage: api.pageImage, reader: api.readerInfo, searchPages: api.search },
   readingApi: { getProgress: api.getProgress, saveProgress: api.saveProgress },
 }))
-vi.mock('../stores/auth', () => ({ useAuthStore: () => ({ user: { id: 1 } }) }))
+vi.mock('../stores/workspace', () => ({ useWorkspaceStore: () => ({ ownerId: 17, label: '本地学习空间' }) }))
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: (guard: () => Promise<boolean>) => { leaveGuard = guard }, onBeforeRouteUpdate: vi.fn(),
   useRoute: () => ({ params: api.params, get query() { return api.query } }),
   useRouter: () => ({ push: api.push, replace: api.replace }),
 }))
@@ -58,6 +60,20 @@ const render = async () => {
 }
 
 describe('查看教材原页', () => {
+  it('离开阅读页等原页的保存响应，不能在防抖前卸载丢位置', async () => {
+    await render()
+    await wrapper!.get('img').trigger('load')
+    let finish!: (value: unknown) => void
+    api.saveProgress.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    let left = false
+    const leaving = leaveGuard().then(value => { left = value })
+    await flushPromises()
+    expect(left).toBe(false)
+    expect(api.saveProgress).toHaveBeenCalledWith(2, expect.objectContaining({ page_number: 9 }), expect.any(AbortSignal))
+    finish({ textbook_id: 2, page_number: 9, chapter_id: null, document_revision: 'v1', revision: 1, updated_at: '2026-10-20T00:00:00Z' })
+    await leaving
+    expect(left).toBe(true)
+  })
   it('从知识点详情返回教材时定位到指定章节的原页', async () => {
     api.query.chapter = '9'
     api.structure.mockResolvedValue({

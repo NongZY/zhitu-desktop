@@ -8,7 +8,7 @@ vi.mock('../api', () => ({ examApi: { get: vi.fn().mockResolvedValue({
   questions: [{ id: 1, stem: '计算：(-1)^4。', type: 'single_choice', score: 1,
     difficulty: 1, options: [{ key: 'A', text: '2^2' }] }],
 }) } }))
-vi.mock('vue-router', () => ({ useRoute: () => ({ params: { id: '1' } }), useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('vue-router', () => ({ onBeforeRouteLeave: vi.fn(), useRoute: () => ({ params: { id: '1' } }), useRouter: () => ({ push: vi.fn() }) }))
 let wrapper: VueWrapper
 afterEach(() => wrapper?.unmount())
 describe('练习页面的数学显示', () => {

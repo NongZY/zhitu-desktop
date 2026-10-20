@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Aim,
-  ArrowDown,
   ChatDotRound,
   Collection,
   DataAnalysis,
@@ -13,15 +12,18 @@ import {
   Menu as MenuIcon,
   Notebook,
   Reading,
-  SwitchButton,
   Tickets,
   TrendCharts,
 } from '@element-plus/icons-vue'
-import { useAuthStore } from '../stores/auth'
+import { useWorkspaceStore } from '../stores/workspace'
 
 const route = useRoute()
 const router = useRouter()
-const auth = useAuthStore()
+const workspace = useWorkspaceStore()
+const disconnected = ref(false)
+const onDisconnect = () => { disconnected.value = true }
+onMounted(() => window.addEventListener('desktop:disconnected', onDisconnect))
+onUnmounted(() => window.removeEventListener('desktop:disconnected', onDisconnect))
 const collapsed = ref(false)
 const mobileMenu = ref(false)
 
@@ -40,17 +42,12 @@ const activePath = computed(() => {
   return items.find((item) => route.path.startsWith(item.path))?.path || '/dashboard'
 })
 
-const initials = computed(() => (auth.user?.name || auth.user?.email || '学').slice(0, 1).toUpperCase())
 
 function navigate(path: string) {
   mobileMenu.value = false
   void router.push(path)
 }
 
-function logout() {
-  auth.logout()
-  void router.replace('/auth')
-}
 </script>
 
 <template>
@@ -99,21 +96,10 @@ function logout() {
           <button class="quick-study" type="button" @click="navigate('/exam/generate')">
             <el-icon><Collection /></el-icon><span>开始练习</span>
           </button>
-          <el-dropdown trigger="click">
-            <button class="user-trigger" type="button">
-              <span class="avatar">{{ initials }}</span>
-              <span class="user-copy"><strong>{{ auth.user?.name || '学习者' }}</strong><small>个人学习空间</small></span>
-              <el-icon><ArrowDown /></el-icon>
-            </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item :icon="SwitchButton" @click="logout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <div class="user-trigger"><span class="avatar">学</span><span class="user-copy"><strong>{{ workspace.label }}</strong><small>资料保存在这台电脑</small></span></div>
         </div>
       </header>
-      <main class="page-container"><router-view /></main>
+      <main class="page-container"><el-alert v-if="disconnected" title="本地连接已中断，请关闭后重新启动软件，已有资料仍保留。" type="warning" :closable="false" /><router-view /></main>
     </div>
 
     <el-drawer v-model="mobileMenu" direction="ltr" size="280px" :with-header="false" class="mobile-drawer">

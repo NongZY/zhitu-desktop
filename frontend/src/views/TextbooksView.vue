@@ -98,8 +98,7 @@ onUnmounted(() => refreshTimer && window.clearTimeout(refreshTimer))
     <div v-loading="loading" class="book-grid">
       <article v-for="book in books" :key="book.id" class="book-card surface-card" @click="router.push(`/textbooks/${book.id}`)">
         <div class="book-cover" :class="statusMeta[book.status]?.className">
-          <img v-if="book.cover_url" :src="book.cover_url" :alt="book.title" />
-          <template v-else><div class="cover-lines"></div><el-icon><Reading /></el-icon><span>{{ book.subject || '智能教材' }}</span><small>{{ book.grade || book.edition || '知识学习' }}</small></template>
+          <div class="cover-lines"></div><el-icon><Reading /></el-icon><span>{{ book.subject || '学习资料' }}</span><small>{{ book.grade || book.edition || '知识学习' }}</small>
           <el-tag class="book-status" :type="statusMeta[book.status]?.type" effect="light" round size="small">{{ statusMeta[book.status]?.label || book.status }}</el-tag>
         </div>
         <div class="book-info">

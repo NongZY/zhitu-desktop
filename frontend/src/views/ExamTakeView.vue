@@ -2,12 +2,13 @@
 import MathContent from '../components/MathContent.vue'
 import QuestionTypeTag from '../components/QuestionTypeTag.vue'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Check, Clock, FullScreen, Loading, Warning } from '@element-plus/icons-vue'
 import { examApi, type ExamPaper, type ExamResult, type QuestionOption } from '../api'
 import { getApiErrorMessage } from '../api/http'
 import { formatDuration } from '../utils/learning'
+import { registerCloseGuard, type CloseDecision } from '../runtime/close'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,6 +22,17 @@ const remaining = ref(0)
 const startedAt = ref(Date.now())
 const answers = reactive<Record<string, string | string[] | boolean | null>>({})
 let timer: number | undefined
+async function prepareLeave(): Promise<CloseDecision> {
+  if (!paper.value || result.value) return 'ready'
+  if (submitting.value) { ElMessage.warning('正在提交，请稍等后再离开'); return 'stay' }
+  try {
+    await ElMessageBox.confirm('这次练习尚未提交，当前作答不会保存。要放弃并离开吗？', '练习尚未完成', { confirmButtonText: '放弃作答并离开', cancelButtonText: '继续练习', type: 'warning' })
+    return 'discard'
+  } catch { return 'stay' }
+}
+const unregisterClose = registerCloseGuard(prepareLeave)
+onBeforeRouteLeave(async () => (await prepareLeave()) !== 'stay')
+onBeforeUnmount(unregisterClose)
 
 const currentQuestion = computed(() => paper.value?.questions[currentIndex.value])
 const answeredCount = computed(() => Object.values(answers).filter((value) => Array.isArray(value) ? value.length : value !== null && value !== '').length)

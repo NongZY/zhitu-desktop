@@ -7,16 +7,68 @@ const api = vi.hoisted(() => ({ getProgress: vi.fn(), saveProgress: vi.fn() }))
 vi.mock('../api', () => ({ readingApi: api }))
 const saved = (page: number, revision: number) => ({ textbook_id: 2, page_number: page, chapter_id: null, document_revision: 'v1', revision, updated_at: '2026-10-15T00:00:00Z' })
 let state: ReturnType<typeof useReadingProgress>
+let confirmedPage: number | null = null
+const lastConfirmedPage = () => confirmedPage
+async function readyReadingAt(page: number) {
+  await state.load()
+  state.recordDisplayed(page, null)
+  await vi.advanceTimersByTimeAsync(1000)
+  return state
+}
 const bookId = ref(2), userId = ref<number | null>(1), documentRevision = ref<string | null>('v1')
 beforeEach(() => {
   vi.resetAllMocks(); vi.useFakeTimers()
   bookId.value = 2; userId.value = 1; documentRevision.value = 'v1'
   api.getProgress.mockResolvedValue({ progress: null })
-  api.saveProgress.mockImplementation(async (_id, payload) => saved(payload.page_number, payload.expected_revision + 1))
+  confirmedPage = null
+  api.saveProgress.mockImplementation(async (_id, payload) => {
+    const response = saved(payload.page_number, payload.expected_revision + 1)
+    confirmedPage = response.page_number
+    return response
+  })
   state = useReadingProgress({ bookId, userId, documentRevision })
 })
 afterEach(() => { state.dispose(); vi.useRealTimers() })
 describe('阅读位置可靠保存', () => {
+  it('关闭时保存尚未到一秒的最后显示页', async () => {
+    const reading = await readyReadingAt(15)
+    reading.recordDisplayed(16, null)
+    expect(await reading.flush()).toBe(true)
+    expect(lastConfirmedPage()).toBe(16)
+  })
+  it('关闭等待在途写入后保存最新显示页', async () => {
+    await state.load()
+    let finish!: (value: unknown) => void
+    api.saveProgress.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    state.recordDisplayed(15, null); await vi.advanceTimersByTimeAsync(1000)
+    state.recordDisplayed(16, null)
+    const flushing = state.flush()
+    finish(saved(15, 1))
+    expect(await flushing).toBe(true)
+    expect(lastConfirmedPage()).toBe(16)
+  })
+  it('保存失败不虚报成功，重试能补存', async () => {
+    await state.load(); state.recordDisplayed(15, null)
+    api.saveProgress.mockRejectedValueOnce(new Error('disk full'))
+    expect(await state.flush()).toBe(false)
+    expect(lastConfirmedPage()).toBeNull()
+    await state.retry()
+    expect(lastConfirmedPage()).toBe(15)
+  })
+  it('冲突或未加载时关闭不能当成保存成功', async () => {
+    expect(await state.flush()).toBe(false)
+    await state.load(); state.recordDisplayed(15, null)
+    api.saveProgress.mockRejectedValueOnce({ response: { status: 409 } })
+    expect(await state.flush()).toBe(false)
+    expect(state.status.value).toBe('conflict')
+  })
+  it('写入超时返回失败，不无限卡住窗口', async () => {
+    await state.load(); state.recordDisplayed(15, null)
+    api.saveProgress.mockReturnValueOnce(new Promise(() => {}))
+    const result = state.flush()
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(await result).toBe(false)
+  })
   it('重新打开已保存页也更新最近阅读时间，不能只在翻页时更新首页', async () => {
     api.getProgress.mockResolvedValueOnce({ progress: saved(15, 2) })
     await state.load()
