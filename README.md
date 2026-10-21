@@ -1,6 +1,6 @@
 # 智能自适应学习系统
 
-> 本目录是 **Windows 应用版的独立开发项目**，当前开发版本 `0.2.0-dev`：D1 已接通免登录本地空间、受保护本机服务和 Windows 原生窗口，尚未生成安装包。原网页版继续保留在 `E:\项目\学习系统`，不受本目录改动影响。
+> 本目录是 **Windows 应用版的独立项目**。已生成 `0.2.0-test.1` 本机测试安装包，可双击桌面的“知途（测试版）”使用；安装包位置、功能范围和测试记录见 [测试版说明](docs/DESKTOP_TEST_BUILD.md)。D1 已接通免登录本地空间、受保护本机服务和 Windows 原生窗口。原网页版继续保留在 `E:\项目\学习系统`，不受本目录改动影响。
 >
 > 应用版开发启动：在 PyCharm 使用应用版 `backend\.venv\Scripts\python.exe`，运行根目录 `run_desktop.py`。无需 Docker，不打开浏览器。准备步骤、数据位置和验收边界见 [桌面 D1 说明](docs/DESKTOP_D1.md)、[版本来源](docs/VERSION_LINEAGE.md) 和 [整体设计](docs/superpowers/specs/2026-10-20-windows-local-app-design.md)。多格式和可选 AI 设置尚待后续批次。
 

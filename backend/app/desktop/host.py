@@ -17,6 +17,16 @@ from uuid import uuid4
 from app.desktop.profile import DesktopContext
 
 
+def service_launch() -> tuple[list[str], Path]:
+    if getattr(sys, "frozen", False):
+        folder = Path(sys.executable).resolve().parent
+        service = folder / "ZhiTuService.exe"
+        if not service.is_file():
+            raise RuntimeError("本地服务程序文件缺失，请重新解压完整测试包或重新安装")
+        return [str(service)], folder
+    return [sys.executable, "-I", "-m", "app.desktop.service"], Path(__file__).resolve().parents[2]
+
+
 @dataclass(frozen=True)
 class ShutdownReport:
     status: Literal["graceful", "forced"]
@@ -122,11 +132,11 @@ class DesktopHost:
     def start(self, data_dir: Path, static_dir: Path) -> DesktopContext:
         if self._process is not None:
             raise RuntimeError("本地服务已启动")
-        backend = Path(__file__).resolve().parents[2]
+        command, working_dir = service_launch()
         # -I ignores Python injection variables; desktop Settings separately excludes all external config.
         self._process = subprocess.Popen(
-            [sys.executable, "-I", "-m", "app.desktop.service"],
-            cwd=backend,
+            command,
+            cwd=working_dir,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

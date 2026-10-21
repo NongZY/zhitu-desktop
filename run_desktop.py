@@ -1,4 +1,4 @@
-"""知途应用版开发启动入口。不会启动浏览器、Docker、npm 或下载依赖。"""
+"""知途桌面入口，支持源码与独立目录包。"""
 
 import os
 import subprocess
@@ -21,13 +21,14 @@ def main() -> int:
     if os.name != "nt":
         _error("目前开发版仅支持 Windows 10/11 x64。")
         return 1
-    python = ROOT / "backend" / ".venv" / "Scripts" / "python.exe"
-    if not python.is_file():
-        _error("缺少应用版独立开发环境。请按 docs/DESKTOP_D1.md 准备；此版本还不是安装包。")
-        return 1
-    if Path(sys.executable).resolve() != python.resolve():
-        return subprocess.call([str(python), str(Path(__file__).resolve())], cwd=ROOT)
-    sys.path.insert(0, str(ROOT / "backend"))
+    if not getattr(sys, "frozen", False):
+        python = ROOT / "backend" / ".venv" / "Scripts" / "python.exe"
+        if not python.is_file():
+            _error("缺少应用版独立开发环境。请按 docs/DESKTOP_D1.md 准备，或使用已打包的测试版。")
+            return 1
+        if Path(sys.executable).resolve() != python.resolve():
+            return subprocess.call([str(python), str(Path(__file__).resolve())], cwd=ROOT)
+        sys.path.insert(0, str(ROOT / "backend"))
     from app.desktop.host import DesktopHost
     from app.desktop.instance import ExistingInstance, InstanceLease
     from app.desktop.profile import resolve_data_dir
@@ -51,7 +52,7 @@ def main() -> int:
         webview.start(gui="edgechromium", private_mode=True, debug=False)
         return 0
     except Exception:
-        _error("知途启动失败。请确认已构建应用版界面、安装桌面依赖及 WebView2。学习数据不会删除。")
+        _error("知途启动失败。请确认程序文件完整、已安装 WebView2；源码运行请先构建界面。学习数据不会删除。")
         return 1
     finally:
         host.stop()

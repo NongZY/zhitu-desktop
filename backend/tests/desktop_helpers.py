@@ -15,7 +15,7 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 
 class RunningDesktop:
-    def __init__(self, folder: Path, static: Path | None = None):
+    def __init__(self, folder: Path, static: Path | None = None, executable: Path | None = None):
         self.folder = folder
         folder.mkdir(parents=True, exist_ok=True)
         if static is None:
@@ -24,9 +24,14 @@ class RunningDesktop:
             (static / "index.html").write_text("<html>desktop fixture</html>", encoding="utf-8")
         self.token = secrets.token_urlsafe(32)
         env = {**os.environ, "PYTHONPATH": str(BACKEND), "PYTHONIOENCODING": "utf-8"}
+        command = [str(executable)] if executable else [sys.executable, "-m", "app.desktop.service"]
+        if executable:
+            env.pop("PYTHONPATH", None)
+            env.pop("PYTHONHOME", None)
+            env["PATH"] = str(Path(os.environ["SystemRoot"]) / "System32")
         self.process = subprocess.Popen(
-            [sys.executable, "-m", "app.desktop.service"],
-            cwd=BACKEND,
+            command,
+            cwd=folder if executable else BACKEND,
             env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -34,6 +39,7 @@ class RunningDesktop:
             text=True,
             encoding="utf-8",
             bufsize=1,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         self.frames = queue.Queue()
         self.errors = []
