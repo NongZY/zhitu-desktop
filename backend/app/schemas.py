@@ -360,6 +360,7 @@ class LearningPathRead(BaseModel):
 
 
 class RagAskRequest(BaseModel):
+    use_ai: bool = False
     question: str = Field(min_length=1, max_length=2000)
     textbook_id: int | None = None
     chapter_id: int | None = None
@@ -379,6 +380,9 @@ class RagCitation(BaseModel):
 
 
 class RagAnswer(BaseModel):
+    mode: str = 'local'
+    ai_status: str = 'disabled'
+    notice: str = ''
     answer: str
     citations: list[RagCitation]
     grounded: bool
