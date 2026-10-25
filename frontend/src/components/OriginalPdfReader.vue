@@ -2,11 +2,13 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { textbookApi, type Chapter, type PageSearchItem } from '../api'
 import { getApiErrorMessage } from '../api/http'
+import { documentsApi } from '../api/documents'
 
-const props = defineProps<{ bookId: string | number; chapter?: Chapter; page: number | null; pageCount: number; navigationId: number }>()
+const props = defineProps<{ bookId: string | number; chapter?: Chapter; page: number | null; pageCount: number; navigationId: number; version?: string }>()
 const emit = defineEmits<{ navigate: [page: number]; 'page-displayed': [position: { page: number; navigationId: number }] }>()
 const count = computed(() => props.pageCount)
 const current = computed(() => props.page || 1)
+const searchPageSize = computed(() => props.version ? 30 : 10)
 const pageInput = ref(1)
 const zoom = ref(100)
 const warm = ref(false)
@@ -57,7 +59,9 @@ async function loadImage() {
   pageInput.value = target; error.value = ''; loading.value = true
   if (viewport.value) { viewport.value.scrollTop = 0; viewport.value.scrollLeft = 0 }
   try {
-    const blob = await textbookApi.pageImage(props.bookId, target, imageAbort.signal)
+    const blob = props.version
+      ? await textbookApi.pageImage(props.bookId, target, imageAbort.signal, props.version)
+      : await textbookApi.pageImage(props.bookId, target, imageAbort.signal)
     if (request !== imageRequest) return
     imageIdentity.value = { request, page: target, navigationId }
     imageUrl.value = URL.createObjectURL(blob)
@@ -86,6 +90,14 @@ async function search(page = 1) {
   searchAbort?.abort(); searchAbort = new AbortController()
   searching.value = true; searchError.value = ''; hits.value = []; searched.value = false
   try {
+    if (props.version) {
+      const data = await documentsApi.search(props.bookId, query.value.trim(), page, props.version)
+      if (request !== searchRequest) return
+      hits.value = data.items.map(hit => ({ page_number: Number(hit.locator.unit_id), excerpt: hit.excerpt,
+        chapter_id: hit.chapter_id ?? null, chapter_title: null }))
+      total.value = data.total; resultPage.value = page; searched.value = true
+      return
+    }
     const data = await textbookApi.searchPages(props.bookId, {
       q: query.value.trim(), chapter_id: scope.value === 'chapter' ? props.chapter?.id : undefined,
       page, page_size: 10,
@@ -98,8 +110,8 @@ async function search(page = 1) {
     if (request === searchRequest) searching.value = false
   }
 }
-watch([() => props.bookId, () => props.page, () => props.navigationId], loadImage, { immediate: true })
-watch(() => props.bookId, clearSearch)
+watch([() => props.bookId, () => props.page, () => props.navigationId, () => props.version], loadImage, { immediate: true })
+watch([() => props.bookId, () => props.version], clearSearch)
 watch(() => props.chapter?.id, () => {
   clearSearch()
   if (!props.chapter) scope.value = 'book'
@@ -121,7 +133,7 @@ onUnmounted(() => { clearImage(); clearSearch() })
       <div v-if="searched" class="search-results">
         <p>{{ total ? `找到 ${total} 页，点击定位到原页` : '没有找到，可换个关键词。扫描图片中的文字暂不能查找。' }}</p>
         <button v-for="hit in hits" :key="hit.page_number" type="button" @click="jump(hit.page_number)"><strong>PDF 第 {{ hit.page_number }} 页 · {{ hit.chapter_title || '课本正文' }}</strong><span>{{ hit.excerpt }}</span></button>
-        <div v-if="total > 10" class="reader-controls"><button :disabled="resultPage <= 1 || searching" @click="search(resultPage - 1)">上一组结果</button><span>{{ resultPage }} / {{ Math.ceil(total / 10) }}</span><button :disabled="resultPage * 10 >= total || searching" @click="search(resultPage + 1)">下一组结果</button></div>
+        <div v-if="total > searchPageSize" class="reader-controls"><button :disabled="resultPage <= 1 || searching" @click="search(resultPage - 1)">上一组结果</button><span>{{ resultPage }} / {{ Math.ceil(total / searchPageSize) }}</span><button :disabled="resultPage * searchPageSize >= total || searching" @click="search(resultPage + 1)">下一组结果</button></div>
         <small>摘要来自提取文字，仅用于找页；本次定位到页，不对未确认的位置高亮。</small>
       </div>
       <div class="reader-controls">

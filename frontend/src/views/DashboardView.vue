@@ -9,6 +9,7 @@ import StatePanel from '../components/StatePanel.vue'
 import { learningApi, readingApi, type ReadingHome, type DashboardSummary, type MasteryItem } from '../api'
 import { getApiErrorMessage } from '../api/http'
 import { useWorkspaceStore } from '../stores/workspace'
+import { documentsApi, documentLink } from '../api/documents'
 
 const router = useRouter()
 const workspace = useWorkspaceStore()
@@ -19,6 +20,8 @@ const mastery = ref<MasteryItem[]>([])
 const readingHome = ref<ReadingHome | null>(null)
 const readingLoading = ref(true)
 const readingError = ref('')
+const recentDocument = ref<Awaited<ReturnType<typeof documentsApi.recent>>>(null)
+const preferDocument = computed(() => recentDocument.value && (!readingHome.value?.continue_reading || new Date(recentDocument.value.updated_at).getTime() > new Date(readingHome.value.continue_reading.updated_at).getTime()))
 let homeRequest = 0
 let homeAbort: AbortController | undefined
 
@@ -26,6 +29,8 @@ async function loadReadingHome() {
   const request = ++homeRequest
   homeAbort?.abort(); homeAbort = new AbortController()
   readingHome.value = null; readingLoading.value = true; readingError.value = ''
+  recentDocument.value = null
+  void documentsApi.recent().then(value => { if (request === homeRequest) recentDocument.value = value }).catch(() => {})
   try {
     const data = await readingApi.home(homeAbort.signal)
     if (request === homeRequest) readingHome.value = data
@@ -87,7 +92,11 @@ onMounted(() => { void load(); void loadReadingHome() })
       <h2>接着学</h2>
       <p v-if="readingLoading" role="status">正在查找上次读到的位置…</p>
       <p v-if="readingError" role="alert">{{ readingError }} <el-button text @click="loadReadingHome">重试读取位置</el-button></p>
-      <template v-if="readingHome?.continue_reading">
+      <template v-if="preferDocument && recentDocument">
+        <h3>{{ recentDocument.title }}</h3><p>{{ recentDocument.kind === 'slide' ? `第 ${recentDocument.unit_id} 张幻灯片` : '继续上次阅读的段落' }}</p>
+        <el-button type="primary" :icon="Reading" @click="router.push(documentLink(recentDocument.textbook_id, recentDocument))">继续阅读</el-button>
+      </template>
+      <template v-else-if="readingHome?.continue_reading">
         <h3>{{ readingHome.continue_reading.title }}</h3>
         <p>{{ readingHome.continue_reading.chapter_title ? `${readingHome.continue_reading.chapter_title} · ` : '' }}PDF 第 {{ readingHome.continue_reading.page_number }} 页 / {{ readingHome.continue_reading.page_count }} 页</p>
         <el-button type="primary" :icon="Reading" @click="router.push(`/textbooks/${readingHome.continue_reading.textbook_id}?page=${readingHome.continue_reading.page_number}`)">继续阅读</el-button>

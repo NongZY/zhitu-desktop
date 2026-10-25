@@ -57,9 +57,10 @@ export const textbookApi = {
   }, signal?: AbortSignal) {
     return (await http.get<PageResult<PageSearchItem>>(`/textbooks/${id}/search`, { params, signal })).data
   },
-  async pageImage(id: string | number, pageNumber: number, signal?: AbortSignal) {
+  async pageImage(id: string | number, pageNumber: number, signal?: AbortSignal, version?: string) {
     try {
-      return (await http.get<Blob>(`/textbooks/${id}/pages/${pageNumber}/image`, {
+      const path = version ? `/textbooks/${id}/document/versions/${encodeURIComponent(version)}/pages/${pageNumber}/image` : `/textbooks/${id}/pages/${pageNumber}/image`
+      return (await http.get<Blob>(path, {
         responseType: 'blob', signal,
       })).data
     } catch (error) {
@@ -115,9 +116,10 @@ export const textbookApi = {
   async publish(id: string | number) {
     return normalizeTextbook((await http.post<Textbook>(`/textbooks/${id}/publish`)).data)
   },
-  async upload(id: string | number, file: File, onProgress?: (percentage: number) => void) {
+  async upload(id: string | number, file: File, onProgress?: (percentage: number) => void, encoding = 'auto') {
     const form = new FormData()
     form.append('file', file)
+    form.append('encoding', encoding)
     return (
       await http.post<ImportTask>(`/textbooks/${id}/upload`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },

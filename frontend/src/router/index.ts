@@ -15,7 +15,7 @@ const routes: RouteRecordRaw[] = [
       { path: '', redirect: '/dashboard' },
       { path: 'dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '学习总览' } },
       { path: 'textbooks', name: 'textbooks', component: () => import('../views/TextbooksView.vue'), meta: { title: '我的课本' } },
-      { path: 'textbooks/:id', name: 'textbook-detail', component: () => import('../views/TextbookDetailView.vue'), meta: { title: '教材详情' } },
+      { path: 'textbooks/:id', name: 'textbook-detail', component: () => import('../views/TextbookEntryView.vue'), meta: { title: '教材详情' } },
       { path: 'questions', name: 'questions', component: () => import('../views/QuestionsView.vue'), meta: { title: '我的题库' } },
       { path: 'exam/generate', name: 'exam-generate', component: () => import('../views/ExamGenerateView.vue'), meta: { title: '做练习' } },
       { path: 'results', name: 'results', component: () => import('../views/ResultsView.vue'), meta: { title: '学习记录' } },

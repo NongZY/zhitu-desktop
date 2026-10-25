@@ -4,6 +4,8 @@ import ElementPlus from 'element-plus'
 import DashboardView from './DashboardView.vue'
 
 const api = vi.hoisted(() => ({ home: vi.fn(), dashboard: vi.fn(), mastery: vi.fn(), push: vi.fn() }))
+const documents = vi.hoisted(() => ({ recent: vi.fn() }))
+vi.mock('../api/documents', () => ({ documentsApi: documents, documentLink: () => '/textbooks/9?unit=b5' }))
 vi.mock('../api', () => ({ readingApi: api, learningApi: api }))
 vi.mock('../stores/workspace', () => ({ useWorkspaceStore: () => ({ ownerId: 17, label: '本地学习空间' }) }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: api.push }) }))
@@ -13,6 +15,7 @@ beforeEach(() => {
   api.home.mockResolvedValue({ textbook_count: 0, continue_reading: null, reading_notice: null })
   api.dashboard.mockResolvedValue({ textbook_count: 0, completed_exam_count: 0, average_score: 0, study_minutes: 0 })
   api.mastery.mockResolvedValue([])
+  documents.recent.mockResolvedValue(null)
 })
 afterEach(() => wrapper?.unmount())
 async function render() {
@@ -21,6 +24,13 @@ async function render() {
 }
 async function click(label: string) { await wrapper!.findAll('button').find(b => b.text() === label)!.trigger('click') }
 describe('首页继续阅读', () => {
+  it('最近阅读 Word 或文本时能进入对应段落', async () => {
+    documents.recent.mockResolvedValue({ textbook_id: 9, title: '语言学习', kind: 'block', unit_id: 'b5', updated_at: '2026-10-24T00:00:00Z' })
+    await render()
+    expect(wrapper!.text()).toContain('语言学习')
+    await click('继续阅读')
+    expect(api.push).toHaveBeenCalledWith('/textbooks/9?unit=b5')
+  })
   it('图表失败也显示最近原页的继续入口', async () => {
     api.home.mockResolvedValue({ textbook_count: 1, reading_notice: null, continue_reading: {
       textbook_id: 2, title: '数学', page_number: 15, page_count: 200, chapter_title: '有理数',

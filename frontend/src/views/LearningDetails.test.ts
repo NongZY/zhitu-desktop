@@ -7,6 +7,7 @@ import ResultsView from './ResultsView.vue'
 
 const api = vi.hoisted(() => ({ home: vi.fn(), dashboard: vi.fn(), mastery: vi.fn(), path: vi.fn(), exams: vi.fn(), historyPage: vi.fn(), wrongQuestions: vi.fn(), push: vi.fn(), query: {} as Record<string, string> }))
 vi.mock('../api', () => ({ learningApi: api, readingApi: api }))
+vi.mock('../api/documents', () => ({ documentsApi: { recent: async () => null }, documentLink: () => '' }))
 vi.mock('../stores/workspace', () => ({ useWorkspaceStore: () => ({ ownerId: 17, label: '本地学习空间' }) }))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: api.push }), useRoute: () => ({ query: api.query }) }))
 let wrapper: VueWrapper | undefined

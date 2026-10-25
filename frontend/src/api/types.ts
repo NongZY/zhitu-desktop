@@ -399,6 +399,7 @@ export interface LearningPath {
 }
 
 export interface Citation {
+  locator?: import('./documents').DocumentLocator | null
   chunk_id?: string | number
   textbook_id?: string | number
   textbook_title: string

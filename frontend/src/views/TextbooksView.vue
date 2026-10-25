@@ -16,6 +16,8 @@ const dialogVisible = ref(false)
 const creating = ref(false)
 const uploadProgress = ref(0)
 const selectedFile = ref<File>()
+const encoding = ref('auto')
+const createdBookId = ref<string | number>()
 const formRef = ref<FormInstance>()
 const form = reactive({ title: '', subject: '', grade: '', edition: '' })
 let refreshTimer: number | undefined
@@ -51,7 +53,7 @@ async function load() {
 
 function onFileChange(file: UploadFile) {
   selectedFile.value = file.raw
-  if (!form.title) form.title = file.name.replace(/\.pdf$/i, '')
+  if (!form.title) form.title = file.name.replace(/\.(pdf|docx|pptx|txt|md)$/i, '')
 }
 
 function openCreate() {
@@ -62,12 +64,14 @@ async function createBook() {
   if (!formRef.value || !(await formRef.value.validate().catch(() => false))) return
   creating.value = true
   try {
-    const book = await textbookApi.create(form)
-    if (selectedFile.value) await textbookApi.upload(book.id, selectedFile.value, (value) => (uploadProgress.value = value))
+    if (!createdBookId.value) createdBookId.value = (await textbookApi.create(form)).id
+    if (selectedFile.value) await textbookApi.upload(createdBookId.value, selectedFile.value, (value) => (uploadProgress.value = value), encoding.value)
     ElMessage.success(selectedFile.value ? '课本已上传，准备好后就能阅读' : '课本已添加')
     dialogVisible.value = false
     Object.assign(form, { title: '', subject: '', grade: '', edition: '' })
     selectedFile.value = undefined
+    createdBookId.value = undefined
+    encoding.value = 'auto'
     uploadProgress.value = 0
     await load()
   } catch (err) {
@@ -91,7 +95,7 @@ onUnmounted(() => refreshTimer && window.clearTimeout(refreshTimer))
       <div><span class="summary-icon"><el-icon><Reading /></el-icon></span><div><strong>{{ books.length }}</strong><small>全部教材</small></div></div>
       <div><span class="summary-dot ready"></span><div><strong>{{ readyCount }}</strong><small>可以学习</small></div></div>
       <div><span class="summary-dot processing"></span><div><strong>{{ books.length - readyCount }}</strong><small>还未准备好</small></div></div>
-      <p>教材内容仅在你的账户空间中使用，请确保拥有相关资料的合法使用权。</p>
+      <p>教材内容保存在你的学习空间，请确保拥有相关资料的合法使用权。</p>
     </div>
 
     <el-alert v-if="error" class="error-banner" type="warning" :closable="false" show-icon title="教材列表暂不可用" :description="error" />
@@ -109,7 +113,7 @@ onUnmounted(() => refreshTimer && window.clearTimeout(refreshTimer))
           <p v-else-if="book.processing_message" class="task-message" :class="{ 'task-error': book.status === 'failed' }">{{ book.processing_message }}</p>
         </div>
       </article>
-      <button class="add-book-card" type="button" @click="openCreate"><span><el-icon><DocumentAdd /></el-icon></span><strong>添加课本</strong><small>上传 PDF，准备好后直接阅读</small></button>
+      <button class="add-book-card" type="button" @click="openCreate"><span><el-icon><DocumentAdd /></el-icon></span><strong>添加课本</strong><small>支持 PDF、Word、PPT、TXT 和 Markdown</small></button>
     </div>
     <StatePanel v-if="!loading && !books.length" title="还没有上传课本" description="从一本你真正想学的教材开始，按自己的节奏开始学习。">
       <el-button type="primary" @click="openCreate">立即导入</el-button>
@@ -120,11 +124,12 @@ onUnmounted(() => refreshTimer && window.clearTimeout(refreshTimer))
         <el-form-item label="课本名称" prop="title"><el-input v-model="form.title" placeholder="例如：高中数学 必修第一册" /></el-form-item>
         <div class="form-row"><el-form-item label="学科" prop="subject"><el-input v-model="form.subject" placeholder="数学" /></el-form-item><el-form-item label="年级"><el-input v-model="form.grade" placeholder="高一" /></el-form-item></div>
         <el-form-item label="版本 / 出版社"><el-input v-model="form.edition" placeholder="例如：人教 A 版" /></el-form-item>
-        <el-form-item label="教材 PDF（可稍后上传）">
-          <el-upload drag :auto-upload="false" :limit="1" accept="application/pdf" :on-change="onFileChange" :on-remove="() => selectedFile = undefined">
-            <el-icon class="el-icon--upload"><UploadFilled /></el-icon><div class="el-upload__text">拖入 PDF，或<em>点击选择</em></div><template #tip><div class="el-upload__tip">建议上传能选中文字的 PDF。照片或扫描版课本暂不能直接阅读。</div></template>
+        <el-form-item label="学习资料（可稍后上传）">
+          <el-upload drag :auto-upload="false" :limit="1" accept=".pdf,.docx,.pptx,.txt,.md" :on-change="onFileChange" :on-remove="() => selectedFile = undefined">
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon><div class="el-upload__text">拖入资料，或<em>点击选择</em></div><template #tip><div class="el-upload__tip">支持 PDF、DOCX、PPTX、TXT、MD。Word / PPT 提供结构化阅读；复杂公式请对照原文件。旧版 DOC / PPT 请先另存为新版格式。</div></template>
           </el-upload>
         </el-form-item>
+        <el-form-item v-if="/\.(txt|md)$/i.test(selectedFile?.name || '')" label="文字编码"><el-select v-model="encoding"><el-option value="auto" label="自动识别 UTF-8 / Unicode" /><el-option value="gb18030" label="中文 GB18030（乱码时尝试）" /></el-select></el-form-item>
         <el-progress v-if="uploadProgress" :percentage="uploadProgress" />
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="creating" @click="createBook">添加课本</el-button></template>

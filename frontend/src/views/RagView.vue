@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import MathContent from '../components/MathContent.vue'
 import { nextTick, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { documentLink } from '../api/documents'
 import { ChatDotRound, Document, Promotion, Reading, RefreshLeft } from '@element-plus/icons-vue'
 import PageHeader from '../components/PageHeader.vue'
 import { ragApi, textbookApi, type Citation, type Textbook } from '../api'
@@ -10,6 +11,11 @@ import { getApiErrorMessage } from '../api/http'
 interface ChatMessage { role: 'user' | 'assistant'; content: string; citations?: Citation[]; error?: boolean }
 
 const route = useRoute()
+const router = useRouter()
+function openCitation(citation: Citation) {
+  if (!citation.textbook_id) return
+  void router.push(citation.locator ? documentLink(citation.textbook_id, citation.locator) : `/textbooks/${citation.textbook_id}${citation.page ? `?page=${citation.page}` : ''}`)
+}
 const books = ref<Textbook[]>([])
 const textbookId = ref<string | number>()
 const chapterId = ref<string | number>()
@@ -79,7 +85,7 @@ onMounted(async () => {
           <div v-if="!messages.length" class="chat-empty"><span><el-icon><Reading /></el-icon></span><h2>从教材中寻找答案</h2><p>选择一本教材并提出问题。系统先检索相关原文，再生成带引用的回答。</p><div><button v-for="item in suggestions" :key="item" type="button" @click="send(item)">{{ item }}</button></div></div>
           <article v-for="(message, index) in messages" :key="index" class="message" :class="message.role">
             <span class="message-avatar">{{ message.role === 'user' ? '我' : '知' }}</span>
-            <div class="message-body"><p :class="{ error: message.error }"><MathContent :text="message.content" /></p><div v-if="message.citations?.length" class="citations"><strong>引用来源</strong><button v-for="(citation, citationIndex) in message.citations" :key="citation.chunk_id || citationIndex" type="button"><el-icon><Document /></el-icon><span><b>[{{ citationIndex + 1 }}] {{ citation.textbook_title }}</b><small>{{ citation.chapter_title || '教材正文' }}<template v-if="citation.page"> · 第 {{ citation.page }} 页</template></small><em>{{ citation.content }}</em></span></button></div></div>
+            <div class="message-body"><p :class="{ error: message.error }"><MathContent :text="message.content" /></p><div v-if="message.citations?.length" class="citations"><strong>引用来源（点击查看原文）</strong><button v-for="(citation, citationIndex) in message.citations" :key="citation.chunk_id || citationIndex" type="button" @click="openCitation(citation)"><el-icon><Document /></el-icon><span><b>[{{ citationIndex + 1 }}] {{ citation.textbook_title }}</b><small>{{ citation.chapter_title || '教材正文' }}<template v-if="citation.page"> · 第 {{ citation.page }} 页</template><template v-else-if="citation.locator?.kind === 'slide'"> · 幻灯片 {{ citation.locator.unit_id }}</template></small><em>{{ citation.content }}</em></span></button></div></div>
           </article>
           <article v-if="sending" class="message assistant"><span class="message-avatar">知</span><div class="message-body typing"><i></i><i></i><i></i><span>正在检索教材并组织回答</span></div></article>
         </div>
