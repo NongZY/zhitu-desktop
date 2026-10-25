@@ -109,12 +109,14 @@ def extract_outline(document, page_texts: list[str]) -> list[OutlineEntry]:
 
 
 def apply_outline(db: Session, textbook_id: int, entries: list[OutlineEntry],
-                  chunks: list[DocumentChunk]) -> int:
+                  chunks: list[DocumentChunk], *, chapter_ids: set[int] | None = None) -> int:
     """Create only an empty outline. Never replace learners' edited structures.
 
     Runs inside caller's transaction; retries preserve chapter IDs and references.
     """
     chapters = list(db.scalars(select(Chapter).where(Chapter.textbook_id == textbook_id)))
+    if chapter_ids is not None:
+        chapters = [c for c in chapters if c.id in chapter_ids]
     added = 0
     if not chapters:
         parents: dict[int, Chapter] = {}
@@ -132,6 +134,8 @@ def apply_outline(db: Session, textbook_id: int, entries: list[OutlineEntry],
             parents[entry.level] = chapter
             chapters.append(chapter)
             added += 1
+    if chapter_ids is not None:
+        chapter_ids.update(c.id for c in chapters)
     # Narrowest matching range gives each text chunk its most specific chapter.
     for chunk in chunks:
         candidates = [c for c in chapters if c.page_start and c.page_end

@@ -10,12 +10,12 @@ from sqlalchemy.orm import Session
 from app.access import owned_textbook_or_404
 from app.config import settings
 from app.database import get_db
-from app.models import (DocumentImport, DocumentPosition, DocumentRendition, DocumentSource, ImportTask,
+from app.models import (DocumentImport, DocumentPosition, DocumentRendition, DocumentSource, ImportTask, ReadingProgress,
                         Textbook, User, utcnow)
 from app.schemas import ImportTaskRead
 from app.security import get_current_user
 from app.services.documents import (current_document, document_data, locator_for,
-                                    process_document_import)
+                                    process_document_import, enroll_legacy_pdf)
 from app.services.import_dispatch import enqueue_local_import
 from app.services.pdf_reader import searchable
 
@@ -63,7 +63,8 @@ def read_document(textbook_id: int, response: Response,
                   current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     book = owned_textbook_or_404(db, textbook_id, current_user.id)
     response.headers['Cache-Control'] = 'private, no-store'
-    rendition = current_document(db, book)
+    rendition = enroll_legacy_pdf(db, book)
+    db.commit()
     return document_data(db, rendition) if rendition else None
 
 
@@ -123,6 +124,17 @@ def get_position(textbook_id: int, current_user: User = Depends(get_current_user
     book = owned_textbook_or_404(db, textbook_id, current_user.id)
     saved = db.scalar(select(DocumentPosition).where(DocumentPosition.textbook_id == textbook_id,
                                                     DocumentPosition.user_id == current_user.id))
+    if saved is None:
+        legacy = db.scalar(select(ReadingProgress).where(ReadingProgress.textbook_id == textbook_id,
+                                                        ReadingProgress.user_id == current_user.id))
+        if legacy:
+            retained = db.scalar(select(DocumentRendition).join(DocumentSource).where(
+                DocumentSource.textbook_id == textbook_id, DocumentSource.format == 'pdf',
+                DocumentSource.source_revision == legacy.document_revision))
+            if retained:
+                data = document_data(db, retained)
+                return {**locator_for(data, {'page': legacy.page_number}), 'revision': 0,
+                        'updated_at': legacy.updated_at, 'source_changed': not data['is_current']}
     return _read_position(db, book, saved)
 
 

@@ -60,6 +60,17 @@ const render = async () => {
 }
 
 describe('查看教材原页', () => {
+  it('使用当前文件目录，不把旧学习章节的页码用于新 PDF', async () => {
+    api.structure.mockResolvedValue({
+      textbook: { id: 2, title: '新资料', status: 'ready' },
+      chapters: [{ id: 8, title: '旧目录', page_start: 9, children: [] }],
+      reader_chapters: [{ id: 20, title: '新目录', page_start: 2, children: [] }],
+    })
+    await render()
+    expect(wrapper!.find('img[alt="课本原页：PDF 第 2 页"]').exists()).toBe(true)
+    expect(wrapper!.find('.chapter-tree').text()).toContain('新目录')
+    expect(wrapper!.find('.chapter-tree').text()).not.toContain('旧目录')
+  })
   it('离开阅读页等原页的保存响应，不能在防抖前卸载丢位置', async () => {
     await render()
     await wrapper!.get('img').trigger('load')

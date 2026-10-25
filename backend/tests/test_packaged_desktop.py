@@ -6,10 +6,19 @@ from pathlib import Path
 
 import pytest
 import test_desktop_flow as flow
+import test_desktop_documents as documents
 from desktop_helpers import RunningDesktop
 
 BUNDLE = os.environ.get("ZHITU_TEST_BUNDLE")
 pytestmark = pytest.mark.skipif(not BUNDLE, reason="packaged directory not explicitly supplied")
+
+
+def test_packaged_document_formats_and_restart(tmp_path, monkeypatch):
+    folder = Path(BUNDLE)
+    factory = partial(RunningDesktop, executable=folder / 'ZhiTuService.exe',
+                      static=folder / '_internal' / 'frontend' / 'dist')
+    monkeypatch.setattr(documents, 'RunningDesktop', factory)
+    documents.test_local_document_import_search_and_restart(tmp_path)
 
 
 def test_packaged_pdf_reading_practice_restart(tmp_path, monkeypatch):

@@ -95,6 +95,10 @@ def ask(
     citations: list[RagCitation] = []
     for chunk, score in selected:
         textbook = db.get(Textbook, chunk.textbook_id)
+        if textbook and (chunk.metadata_json or {}).get('source') == 'pdf' and not (chunk.metadata_json or {}).get('locator') and textbook.file_path:
+            from app.services.documents import enroll_legacy_pdf
+            enroll_legacy_pdf(db, textbook)
+            db.commit()
         chapter = db.get(Chapter, chunk.chapter_id) if chunk.chapter_id else None
         citations.append(
             RagCitation(

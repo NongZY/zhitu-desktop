@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import Chapter, DocumentChunk, DocumentImport, DocumentRendition, DocumentSource, ImportTask, Textbook
+from app.models import Chapter, DocumentChapter, DocumentChunk, DocumentImport, DocumentRendition, DocumentSource, ImportTask, Textbook
 from app.services.pdf_math_layout import extract_math_layout
 from app.services.pdf_outline import apply_outline, extract_outline
 from app.services.pdf_symbols import EXTRACTION_VERSION, PdfSymbolNormalizer
@@ -147,6 +147,8 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
 
             # Replace PDF-derived content atomically after extraction succeeds.
             # Progress commits above never expose a partially replaced knowledge base.
+            from app.services.documents import enroll_legacy_pdf
+            previous_rendition = enroll_legacy_pdf(db, textbook)
             db.execute(delete(DocumentChunk).where(
                 DocumentChunk.textbook_id == textbook.id,
                 DocumentChunk.metadata_json["source"].as_string().in_(['pdf', 'structured']),
@@ -157,9 +159,20 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
             first_index = highest_index + 1 if highest_index is not None else 0
             for index, chunk in enumerate(extracted, start=first_index):
                 chunk.chunk_index = index
-            added_chapters = apply_outline(db, textbook.id, outline, extracted)
+            chapter_ids = None
+            if previous_rendition:
+                previous_source = db.get(DocumentSource, previous_rendition.source_id)
+                same_layout_text = (previous_rendition.content.get('outline') == [vars(entry) for entry in outline]
+                                    and [b['text'] for b in previous_rendition.content['blocks']] == page_texts)
+                chapter_ids = ({c['id'] for c in previous_rendition.content['chapters']}
+                               if previous_source.format == 'pdf' and (previous_source.source_revision == source_sha256 or same_layout_text)
+                               else set())
+                if previous_source.format == 'pdf' and (previous_source.source_revision == source_sha256 or same_layout_text):
+                    chapter_ids.update(db.scalars(select(DocumentChapter.chapter_id).where(DocumentChapter.source_id == previous_source.id)))
+            added_chapters = apply_outline(db, textbook.id, outline, extracted, chapter_ids=chapter_ids)
             if imported_source:
                 revision = sha256(f'{imported_source.id}:{EXTRACTION_VERSION}'.encode()).hexdigest()
+                imported_source.active_rendition = revision
                 base_locator = dict(source_id=imported_source.id, source_revision=source_sha256,
                                     rendition_revision=revision, kind='page')
                 for chunk in extracted:
@@ -168,20 +181,26 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
                 if db.get(DocumentRendition, revision) is None:
                     blocks = []
                     chapters = []
-                    seen = set()
                     by_page = {chunk.page_number: chunk.chapter_id for chunk in extracted}
                     for number, text in enumerate(page_texts, 1):
                         chapter_id = by_page.get(number)
                         blocks.append(dict(id=f'p{number}', kind='paragraph', page=number,
                                            text=text, chapter_id=chapter_id))
-                        if chapter_id and chapter_id not in seen:
-                            chapter = db.get(Chapter, chapter_id)
-                            chapters.append(dict(id=chapter_id, title=chapter.title, level=1,
-                                                 locator={**base_locator, 'unit_id': str(number)}))
-                            seen.add(chapter_id)
+                    directory = select(Chapter).where(Chapter.textbook_id == textbook.id).order_by(Chapter.order_index, Chapter.id)
+                    if chapter_ids is not None:
+                        directory = directory.where(Chapter.id.in_(chapter_ids))
+                    levels = {}
+                    for chapter in db.scalars(directory):
+                        if not chapter.page_start or not 1 <= chapter.page_start <= len(page_texts):
+                            continue
+                        level = levels.get(chapter.parent_id, 0) + 1
+                        levels[chapter.id] = level
+                        chapters.append(dict(id=chapter.id, title=chapter.title, level=level,
+                            locator={**base_locator, 'unit_id': str(chapter.page_start)}))
                     db.add(DocumentRendition(revision=revision, source_id=imported_source.id,
                         textbook_id=textbook.id, parser_version=EXTRACTION_VERSION,
-                        content=dict(blocks=blocks, chapters=chapters, warnings=[], page_count=len(page_texts))))
+                        content=dict(blocks=blocks, chapters=chapters, warnings=[], page_count=len(page_texts),
+                                     outline=[vars(entry) for entry in outline])))
             db.add_all(extracted)
             task.status = "completed"
             task.progress = 100

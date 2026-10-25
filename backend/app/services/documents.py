@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -20,9 +20,65 @@ from app.services.document_parser import parse_document
 logger = logging.getLogger(__name__)
 
 
+def enroll_legacy_pdf(db: Session, book: Textbook) -> DocumentRendition | None:
+    """Retain an outgoing pre-D2 PDF before its pointer/chunks are replaced.
+
+    Never re-label its existing page positions as belonging to the incoming file.
+    Called in the caller's transaction; immutable managed originals stay in place.
+    """
+    current = current_document(db, book)
+    if current is not None or not book.file_path:
+        return current
+    source = db.scalar(select(DocumentSource).where(DocumentSource.textbook_id == book.id,
+                                                   DocumentSource.managed_file == book.file_path))
+    if source and source.format != 'pdf':
+        return None
+    from app.services.pdf_reader import reader_metadata
+    from app.services.storage import materialize
+    info = reader_metadata(book.file_path)
+    path, temporary = materialize(book.file_path)
+    try:
+        byte_size = path.stat().st_size
+    finally:
+        if temporary:
+            path.unlink(missing_ok=True)
+    if source is None:
+        source = DocumentSource(id=str(uuid4()), textbook_id=book.id, format='pdf',
+            original_name=f'{book.title[:240]}.pdf', managed_file=book.file_path,
+            byte_size=byte_size, source_revision=info.document_revision)
+        db.add(source); db.flush()
+    elif source.source_revision != info.document_revision:
+        raise ValueError('旧原文件已发生变化，请先核对后再替换')
+    chunks = list(db.scalars(select(DocumentChunk).where(DocumentChunk.textbook_id == book.id,
+        DocumentChunk.metadata_json['source'].as_string() == 'pdf').order_by(DocumentChunk.chunk_index)))
+    verified = [c for c in chunks if (c.metadata_json or {}).get('source_sha256') == info.document_revision]
+    revision = sha256((source.id + ':legacy:' + json.dumps([
+        (c.page_number, c.content) for c in verified], ensure_ascii=False)).encode()).hexdigest()
+    locator = dict(source_id=source.id, source_revision=source.source_revision,
+                   rendition_revision=revision, kind='page')
+    chapters = []
+    for chapter in db.scalars(select(Chapter).where(Chapter.textbook_id == book.id).order_by(Chapter.order_index)):
+        if chapter.page_start and 1 <= chapter.page_start <= info.page_count:
+            chapters.append(dict(id=chapter.id, title=chapter.title, level=1,
+                locator={**locator, 'unit_id': str(chapter.page_start)}))
+    blocks = [dict(id=f'p{number}', kind='paragraph', page=number,
+                   text='\n'.join(c.content for c in verified if c.page_number == number))
+              for number in range(1, info.page_count + 1)]
+    rendition = DocumentRendition(revision=revision, source_id=source.id, textbook_id=book.id,
+        parser_version='legacy-preserved-1', content=dict(blocks=blocks, chapters=chapters,
+        warnings=[] if verified else ['旧提取文字无法核验，请查看原页。'], page_count=info.page_count))
+    db.add(rendition)
+    source.active_rendition = revision
+    for chunk in verified:
+        chunk.metadata_json = {**chunk.metadata_json, 'locator': {**locator, 'unit_id': str(chunk.page_number)}}
+    db.flush()
+    return rendition
+
+
 def current_document(db: Session, book: Textbook) -> DocumentRendition | None:
     return db.scalar(select(DocumentRendition).join(DocumentSource).where(
         DocumentRendition.textbook_id == book.id, DocumentSource.managed_file == book.file_path,
+        or_(DocumentSource.active_rendition == DocumentRendition.revision, DocumentSource.active_rendition.is_(None)),
     ).order_by(DocumentRendition.created_at.desc()))
 
 
@@ -113,12 +169,6 @@ def process_document_import(task_id: str) -> None:
                 db.commit()
                 return
             prior = db.get(DocumentRendition, revision)
-            if prior:
-                book.file_path = source.managed_file
-                task.status, task.progress, task.message = 'completed', 100, '资料已经整理完成'
-                book.parse_status = 'ready'
-                db.commit()
-                return
             chapters = []
             stack = []
             chapter = None
@@ -148,12 +198,15 @@ def process_document_import(task_id: str) -> None:
                         content=block['text'], chunk_index=index,
                         metadata_json={'source': 'structured', 'locator': locator_for(data_for_locator, block)}))
             # Commit the new edition as one unit; manual content and questions survive.
+            enroll_legacy_pdf(db, book)
             db.execute(delete(DocumentChunk).where(DocumentChunk.textbook_id == book.id,
                 DocumentChunk.metadata_json['source'].as_string().in_(['structured', 'pdf'])))
             db.add_all(chunks)
             parsed['chapters'] = chapters
-            db.add(DocumentRendition(revision=revision, source_id=source.id, textbook_id=book.id,
-                                     parser_version=parsed['parser_version'], content=parsed))
+            if prior is None:
+                db.add(DocumentRendition(revision=revision, source_id=source.id, textbook_id=book.id,
+                                         parser_version=parsed['parser_version'], content=parsed))
+            source.active_rendition = revision
             book.file_path, book.parse_status = source.managed_file, 'ready'
             task.status, task.progress = 'completed', 100
             task.message = f"整理完成，{len(parsed['blocks'])} 个内容块、{len(chapters)} 个章节"

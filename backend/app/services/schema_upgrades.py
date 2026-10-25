@@ -1,15 +1,17 @@
 """Additive upgrades: run in one maintenance/startup process before other workers."""
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, inspect, select
 
-from app.models import (DocumentImport, DocumentPosition, DocumentRendition, DocumentSource,
+from app.models import (DocumentChapter, DocumentImport, DocumentPosition, DocumentRendition, DocumentSource,
                         ReadingProgress, SchemaMigration)
 
 
 READING_PROGRESS_VERSION = "20261015_reading_progress_v1"
 DOCUMENT_VERSION = "20261023_structured_documents_v1"
+ACTIVATION_VERSION = '20261025_document_activation_v1'
+DIRECTORY_VERSION = '20261025_document_directory_v1'
 DOCUMENT_TABLES = (DocumentSource, DocumentImport, DocumentRendition, DocumentPosition)
-READING_TABLE_NAMES = frozenset({"reading_progress", "schema_migrations", *(
+READING_TABLE_NAMES = frozenset({"reading_progress", "schema_migrations", 'document_chapters', *(
     model.__tablename__ for model in DOCUMENT_TABLES
 )})
 
@@ -35,3 +37,11 @@ def apply_schema_upgrades(engine: Engine) -> None:
             for model in DOCUMENT_TABLES:
                 model.__table__.create(connection, checkfirst=True)
             connection.execute(SchemaMigration.__table__.insert().values(version=DOCUMENT_VERSION))
+        if connection.scalar(select(SchemaMigration.version).where(SchemaMigration.version == ACTIVATION_VERSION)) is None:
+            if 'active_rendition' not in {c['name'] for c in inspect(connection).get_columns('document_sources')}:
+                connection.exec_driver_sql('ALTER TABLE document_sources ADD COLUMN active_rendition VARCHAR(64)')
+            connection.exec_driver_sql('UPDATE document_sources SET active_rendition = (SELECT revision FROM document_renditions WHERE source_id = document_sources.id ORDER BY created_at DESC, revision DESC LIMIT 1) WHERE active_rendition IS NULL')
+            connection.execute(SchemaMigration.__table__.insert().values(version=ACTIVATION_VERSION))
+        if connection.scalar(select(SchemaMigration.version).where(SchemaMigration.version == DIRECTORY_VERSION)) is None:
+            DocumentChapter.__table__.create(connection, checkfirst=True)
+            connection.execute(SchemaMigration.__table__.insert().values(version=DIRECTORY_VERSION))

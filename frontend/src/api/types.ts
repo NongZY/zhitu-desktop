@@ -70,6 +70,7 @@ export interface Chapter {
 export interface TextbookStructure {
   textbook: Textbook
   chapters: Chapter[]
+  reader_chapters?: Chapter[] | null
 }
 
 export interface ChapterContent {

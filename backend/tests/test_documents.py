@@ -170,3 +170,78 @@ def test_deleted_book_does_not_expose_old_versions_when_identifier_is_reused(cli
     replacement = new_book(client, headers)
     assert client.get(f"/api/v1/textbooks/{replacement}/document/versions/{old['rendition_revision']}", headers=headers).status_code == 404
     assert client.get(f'/api/v1/textbooks/{replacement}/document/state', headers=headers).json()['format'] is None
+
+
+def test_retry_reactivates_original_rendition_and_search_chunks(client, create_learner, tmp_path, monkeypatch):
+    from app.models import DocumentChunk
+    monkeypatch.setattr(settings, 'upload_dir', str(tmp_path))
+    headers = create_learner('encoding-cycle@example.com')
+    book = new_book(client, headers)
+    upload(client, headers, book, 'text.txt', '中文'.encode())
+    original = client.get(f'/api/v1/textbooks/{book}/document', headers=headers).json()
+    for encoding in ['gb18030', 'auto']:
+        result = client.post(f'/api/v1/textbooks/{book}/document/retry', headers=headers, json={'encoding': encoding})
+        assert result.status_code == 202
+    current = client.get(f'/api/v1/textbooks/{book}/document', headers=headers).json()
+    assert current['rendition_revision'] == original['rendition_revision']
+    assert current['blocks'][0]['text'] == '中文'
+    with SessionLocal() as db:
+        assert list(db.scalars(select(DocumentChunk.content).where(DocumentChunk.textbook_id == book))) == ['中文']
+
+
+def test_replacing_legacy_pdf_retains_verified_original_and_position(client, create_learner, tmp_path, monkeypatch):
+    from hashlib import sha256
+    from app.models import DocumentChunk, DocumentSource, ReadingProgress
+    from tests.test_pdf_import import _sample_pdf
+    monkeypatch.setattr(settings, 'upload_dir', str(tmp_path))
+    headers = create_learner('legacy-pdf@example.com')
+    book = new_book(client, headers)
+    old_file = tmp_path / 'legacy.pdf'
+    content = _sample_pdf()
+    old_file.write_bytes(content)
+    with SessionLocal() as db:
+        row = db.get(Textbook, book)
+        row.file_path = str(old_file)
+        row.parse_status = 'ready'
+        db.add(DocumentChunk(textbook_id=book, content='Adaptive learning evidence', page_number=1,
+                             chunk_index=0, metadata_json={'source': 'pdf', 'source_sha256': sha256(content).hexdigest()}))
+        db.add(ReadingProgress(user_id=row.owner_id, textbook_id=book, page_number=1,
+                              document_revision=sha256(content).hexdigest(), revision=3))
+        db.commit()
+    upload(client, headers, book, 'new.txt', b'new text')
+    with SessionLocal() as db:
+        assert db.scalar(select(DocumentSource).where(DocumentSource.source_revision == sha256(content).hexdigest()))
+    old_position = client.get(f'/api/v1/textbooks/{book}/document/position', headers=headers).json()
+    assert old_position['kind'] == 'page' and old_position['source_changed']
+    image = client.get(f"/api/v1/textbooks/{book}/document/versions/{old_position['rendition_revision']}/pages/1/image", headers=headers)
+    assert image.status_code == 200 and image.content.startswith(b'\x89PNG')
+
+
+def test_replacement_pdf_uses_its_own_outline_without_deleting_old_learning_chapters(client, create_learner, tmp_path, monkeypatch):
+    import pymupdf
+    from app.models import Chapter
+    monkeypatch.setattr(settings, 'upload_dir', str(tmp_path))
+    headers = create_learner('outline-replace@example.com')
+    book = new_book(client, headers)
+    upload(client, headers, book, 'old.md', '# 旧章节\n旧正文'.encode())
+    old = client.get(f'/api/v1/textbooks/{book}/document', headers=headers).json()['chapters'][0]['id']
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((72, 72), 'New book first chapter')
+        pdf.set_toc([[1, 'New chapter', 1]])
+        pdf_bytes = pdf.tobytes()
+    upload(client, headers, book, 'new.pdf', pdf_bytes)
+    current = client.get(f'/api/v1/textbooks/{book}/document', headers=headers).json()
+    assert [chapter['title'] for chapter in current['chapters']] == ['New chapter']
+    structure = client.get(f'/api/v1/textbooks/{book}/structure', headers=headers).json()
+    assert [chapter['title'] for chapter in structure['reader_chapters']] == ['New chapter']
+    with SessionLocal() as db:
+        assert db.get(Chapter, old).title == '旧章节'
+    new_note = client.post(f'/api/v1/textbooks/{book}/chapters', headers=headers,
+                          json={'title': '手动阅读标记', 'page_start': 1, 'page_end': 1})
+    assert new_note.status_code == 201
+    structure = client.get(f'/api/v1/textbooks/{book}/structure', headers=headers).json()
+    assert {chapter['title'] for chapter in structure['reader_chapters']} == {'手动阅读标记', 'New chapter'}
+    assert client.delete(f"/api/v1/chapters/{new_note.json()['id']}", headers=headers).status_code == 204
+    again = client.post(f'/api/v1/textbooks/{book}/chapters', headers=headers,
+                        json={'title': '新阅读标记', 'page_start': 1, 'page_end': 1})
+    assert again.status_code == 201

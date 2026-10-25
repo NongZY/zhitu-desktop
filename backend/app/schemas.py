@@ -137,6 +137,7 @@ class ChapterTree(ChapterRead):
 
 
 class TextbookStructure(BaseModel):
+    reader_chapters: list[ChapterTree] | None = None
     textbook: TextbookRead
     chapters: list[ChapterTree]
 

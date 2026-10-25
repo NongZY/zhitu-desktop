@@ -50,7 +50,7 @@ const saving = ref(false)
 const recognizing = ref(false)
 const error = ref('')
 const structure = ref<TextbookStructure>()
-const readingChapters = computed(() => structure.value?.chapters || [])
+const readingChapters = computed(() => structure.value?.reader_chapters ?? structure.value?.chapters ?? [])
 const selectedChapter = ref<Chapter>()
 const chapterSearch = ref('')
 const contentItems = ref<ChapterContent[]>([])
@@ -112,7 +112,7 @@ const filteredChapters = computed(() => {
       || chapter.knowledge_points?.some(point => point.name.toLowerCase().includes(query))
     return matches ? [chapter] : children.length ? [{ ...chapter, children }] : []
   })
-  return filter(structure.value?.chapters || [])
+  return filter(readingChapters.value)
 })
 
 async function loadContent() {
@@ -153,7 +153,7 @@ const treeProps = { children: 'children', label: 'title' }
 const flatChapters = computed(() => {
   const result: Chapter[] = []
   const walk = (nodes: Chapter[]) => nodes.forEach((node) => { result.push(node); if (node.children) walk(node.children) })
-  walk(structure.value?.chapters || [])
+  walk(readingChapters.value)
   return result
 })
 const allPoints = computed(() => flatChapters.value.flatMap((chapter) => chapter.knowledge_points || []))
@@ -188,7 +188,7 @@ async function load(preferredChapterId: string | number | undefined = selectedCh
 function applyReadingTarget() {
   if (readerLoading.value) return
   const target = resolveReadingTarget({ pageQuery: route.query.page, chapterQuery: route.query.chapter,
-    chapters: structure.value?.chapters || [], pageCount: readerCount.value,
+    chapters: readingChapters.value, pageCount: readerCount.value,
     progress: progressState.progress.value, documentRevision: documentRevision.value })
   readerPage.value = target.page; navigationId.value++; displayedPage.value = null
   selectedChapter.value = flatChapters.value.find(c => Number(c.id) === target.chapterId)
@@ -330,9 +330,9 @@ onMounted(() => { void openReader() })
       </div>
       <div class="structure-grid">
         <section class="surface-card chapter-panel">
-          <div class="panel-heading"><div><h2>章节目录</h2><p>点击章节开始阅读</p></div><div class="panel-actions"><el-button v-if="!structure.chapters.length" size="small" :loading="recognizing" @click="recognizeOutline">识别章节</el-button><el-button size="small" :icon="CirclePlus" @click="openChapterDialog">添加章节</el-button></div></div>
+          <div class="panel-heading"><div><h2>章节目录</h2><p>点击章节开始阅读</p></div><div class="panel-actions"><el-button v-if="!readingChapters.length" size="small" :loading="recognizing" @click="recognizeOutline">识别章节</el-button><el-button size="small" :icon="CirclePlus" @click="openChapterDialog">添加章节</el-button></div></div>
           <div class="chapter-search"><el-input v-model="chapterSearch" clearable placeholder="搜索章节或知识点，如：绝对值" aria-label="搜索章节或知识点" /></div>
-          <el-tree v-if="structure.chapters.length" class="chapter-tree" :data="filteredChapters" :props="treeProps" node-key="id" :current-node-key="selectedChapter?.id" default-expand-all highlight-current :expand-on-click-node="false" @node-click="onChapterClick">
+          <el-tree v-if="readingChapters.length" class="chapter-tree" :data="filteredChapters" :props="treeProps" node-key="id" :current-node-key="selectedChapter?.id" default-expand-all highlight-current :expand-on-click-node="false" @node-click="onChapterClick">
             <template #default="{ data }"><span class="tree-node" :title="data.title"><el-icon><Document /></el-icon><span>{{ data.title }}</span><small>{{ data.knowledge_points?.length || 0 }}</small></span></template>
           </el-tree>
           <StatePanel v-else compact title="尚未识别章节" description="课本准备好后可以重试识别，也可以自己添加章节。" />

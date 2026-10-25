@@ -16,6 +16,7 @@ from app.database import get_db
 from app.models import (
     Chapter,
     DocumentChunk,
+    DocumentChapter,
     GlobalKnowledgePoint,
     ImportTask,
     KnowledgePointMapping,
@@ -296,6 +297,7 @@ def delete_textbook(
     db.execute(delete(DocumentPosition).where(DocumentPosition.textbook_id == textbook.id))
     db.execute(delete(DocumentRendition).where(DocumentRendition.textbook_id == textbook.id))
     source_ids = select(DocumentSource.id).where(DocumentSource.textbook_id == textbook.id)
+    db.execute(delete(DocumentChapter).where(DocumentChapter.source_id.in_(source_ids)))
     db.execute(delete(DocumentImport).where(DocumentImport.source_id.in_(source_ids)))
     db.execute(delete(DocumentSource).where(DocumentSource.textbook_id == textbook.id))
     db.execute(delete(ImportTask).where(ImportTask.textbook_id == textbook.id))
@@ -312,13 +314,18 @@ def create_chapter(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Chapter:
-    owned_textbook_or_404(db, textbook_id, current_user.id)
+    book = owned_textbook_or_404(db, textbook_id, current_user.id)
     if payload.parent_id is not None:
         parent = owned_chapter_or_404(db, payload.parent_id, current_user.id)
         if parent.textbook_id != textbook_id:
             raise HTTPException(status_code=422, detail="父章节不属于当前教材")
     chapter = Chapter(textbook_id=textbook_id, **payload.model_dump())
     db.add(chapter)
+    db.flush()
+    from app.services.documents import current_document
+    current = current_document(db, book)
+    if current:
+        db.add(DocumentChapter(source_id=current.source_id, chapter_id=chapter.id))
     db.commit()
     db.refresh(chapter)
     return chapter
@@ -413,7 +420,12 @@ def delete_chapter(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    db.delete(owned_chapter_or_404(db, chapter_id, current_user.id))
+    from sqlalchemy import delete
+
+    chapter = owned_chapter_or_404(db, chapter_id, current_user.id)
+    chapter_ids = chapter_scope_ids(db, chapter)
+    db.execute(delete(DocumentChapter).where(DocumentChapter.chapter_id.in_(chapter_ids)))
+    db.delete(chapter)
     db.commit()
     return Response(status_code=204)
 
@@ -557,7 +569,14 @@ def textbook_structure(
     )
     if textbook is None:
         raise HTTPException(status_code=404, detail="教材不存在")
-    return TextbookStructure(textbook=textbook, chapters=_tree(textbook.chapters))
+    from app.services.documents import current_document
+    current = current_document(db, textbook)
+    reader_chapters = None
+    if current:
+        active_ids = {chapter['id'] for chapter in current.content['chapters']}
+        active_ids.update(db.scalars(select(DocumentChapter.chapter_id).where(DocumentChapter.source_id == current.source_id)))
+        reader_chapters = _tree([chapter for chapter in textbook.chapters if chapter.id in active_ids])
+    return TextbookStructure(textbook=textbook, chapters=_tree(textbook.chapters), reader_chapters=reader_chapters)
 
 
 @router.post("/textbooks/{textbook_id}/publish", response_model=TextbookRead)

@@ -89,6 +89,28 @@ def test_chinese_encoding_requires_explicit_choice_and_never_replacement():
     assert parse('正文'.encode('utf-16'), '课本.txt')['blocks'][0]['text'] == '正文'
 
 
+def test_parser_bounds_cumulative_output_even_for_referenced_parts(monkeypatch):
+    from app.services import document_parser
+    monkeypatch.setattr(document_parser, 'MAX_TEXT_CHARS', 30, raising=False)
+    with pytest.raises(ValueError, match='内容过多'):
+        parse(('正文' * 10 + '\n' + '正文' * 10).encode(), 'large.txt')
+
+
+def test_pptx_rejects_repeated_slide_target():
+    with ZipFile(BytesIO(pptx_bytes())) as original:
+        files = {name: original.read(name) for name in original.namelist()}
+    files['ppt/presentation.xml'] = files['ppt/presentation.xml'].replace(b'r:id="r1"', b'r:id="r2"')
+    with pytest.raises(ValueError, match='重复'):
+        parse(package(files), 'repeated.pptx')
+
+
+def test_text_budget_includes_blank_lines_before_splitting(monkeypatch):
+    from app.services import document_parser
+    monkeypatch.setattr(document_parser, 'MAX_TEXT_CHARS', 30)
+    with pytest.raises(ValueError, match='内容过多'):
+        parse(('\n' * 40 + '正文').encode(), 'blank-lines.txt')
+
+
 @pytest.mark.parametrize('files', [
     {'../escape.xml': 'bad'},
     {'word/document.xml': '<!DOCTYPE x [<!ENTITY x "bad">]><x>&x;</x>'},

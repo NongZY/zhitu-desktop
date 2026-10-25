@@ -9,7 +9,7 @@ from app.models import Textbook, User
 
 
 NEW_TABLES = {'reading_progress', 'schema_migrations', 'document_sources',
-              'document_imports', 'document_renditions', 'document_positions'}
+              'document_imports', 'document_renditions', 'document_positions', 'document_chapters'}
 
 
 def test_upgrade_adds_version_once_without_changing_legacy_rows(tmp_path):
@@ -33,10 +33,26 @@ def test_upgrade_adds_version_once_without_changing_legacy_rows(tmp_path):
         after = {table.name: connection.execute(select(table)).all() for table in legacy}
         assert after == before
         versions = connection.exec_driver_sql('SELECT version, applied_at FROM schema_migrations').all()
-        assert len(versions) == 2
+        assert len(versions) == 4
         assert versions[0][0] == '20261015_reading_progress_v1'
         assert versions[1][0] == '20261023_structured_documents_v1'
+        assert versions[2][0] == '20261025_document_activation_v1'
+        assert versions[3][0] == '20261025_document_directory_v1'
         assert versions[0][1]
+    engine.dispose()
+
+
+def test_upgrade_adds_active_rendition_to_already_created_d2_source_table(tmp_path):
+    from app.services.schema_upgrades import apply_schema_upgrades
+    engine = create_engine(f"sqlite:///{(tmp_path / 'd2.db').as_posix()}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql('CREATE TABLE document_sources (id VARCHAR(36) PRIMARY KEY, textbook_id INTEGER, format VARCHAR(10), original_name VARCHAR(255), managed_file VARCHAR(1000), byte_size INTEGER, source_revision VARCHAR(64), created_at DATETIME)')
+        connection.exec_driver_sql("INSERT INTO document_sources (id, textbook_id, format, original_name, managed_file, byte_size, source_revision) VALUES ('existing', 1, 'txt', 'note.txt', 'original.txt', 3, 'digest')")
+    apply_schema_upgrades(engine)
+    apply_schema_upgrades(engine)
+    assert 'active_rendition' in {column['name'] for column in inspect(engine).get_columns('document_sources')}
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql('SELECT managed_file FROM document_sources').scalar() == 'original.txt'
     engine.dispose()
 
 

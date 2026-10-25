@@ -14,6 +14,7 @@ MAX_BYTES = 80 * 1024 * 1024
 MAX_EXPANDED = 64 * 1024 * 1024
 MAX_PART = 8 * 1024 * 1024
 MAX_BLOCKS = 20000
+MAX_TEXT_CHARS = 4_000_000
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 A = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 P = 'http://schemas.openxmlformats.org/presentationml/2006/main'
@@ -25,9 +26,11 @@ class _Content:
         self.blocks: list[dict] = []
         self.warnings: list[str] = []
         self.image_bytes = 0
+        self.text_chars = 0
 
     def add(self, kind: str, text: str = '', **extra):
-        if len(self.blocks) >= MAX_BLOCKS:
+        self.text_chars += len(text) + sum(len(cell) for row in extra.get('cells', []) for cell in row)
+        if len(self.blocks) >= MAX_BLOCKS or self.text_chars > MAX_TEXT_CHARS:
             raise ValueError('资料内容过多，请分成较小文件导入')
         self.blocks.append({'id': f'b{len(self.blocks) + 1}', 'kind': kind,
                             'text': text, **extra})
@@ -52,6 +55,8 @@ def _decode(data: bytes, encoding: str) -> str:
 
 
 def _text(content: _Content, text: str, markdown: bool):
+    if len(text) > MAX_TEXT_CHARS:
+        raise ValueError('资料内容过多，请分成较小文件导入')
     lines = text.splitlines()
     index = 0
     while index < len(lines):
@@ -91,6 +96,7 @@ def _text(content: _Content, text: str, markdown: bool):
 class _Office:
     def __init__(self, data: bytes):
         self.zip = ZipFile(BytesIO(data))
+        self.read_bytes = 0
         members = self.zip.infolist()
         names = [m.filename for m in members]
         if len(members) > 5000 or len(set(names)) != len(names) or sum(m.file_size for m in members) > MAX_EXPANDED:
@@ -109,6 +115,9 @@ class _Office:
             data = stream.read(MAX_PART + 1)
         if len(data) > MAX_PART:
             raise ValueError('文档内部内容过大')
+        self.read_bytes += len(data)
+        if self.read_bytes > MAX_EXPANDED:
+            raise ValueError('资料内容过多，请分成较小文件导入')
         return data
 
     def xml(self, name: str):
@@ -207,10 +216,14 @@ def _pptx(office: _Office, content: _Content):
     slides = root.findall(f'.//{{{P}}}sldId')
     if not slides or len(slides) > 2000:
         raise ValueError('演示文稿没有幻灯片或幻灯片过多')
+    visited = set()
     for number, slide in enumerate(slides, 1):
         target = rels.get(slide.get(f'{{{R}}}id'))
         if not target:
             raise ValueError('幻灯片来源不完整')
+        if target in visited:
+            raise ValueError('文档重复引用同一幻灯片，请另存为新文件后导入')
+        visited.add(target)
         tree = office.xml(target).find(f'.//{{{P}}}spTree')
         if tree is None:
             content.add('heading', f'幻灯片 {number}', level=1, slide=number)

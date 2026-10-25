@@ -1,6 +1,6 @@
-#define AppVersion "0.2.0-test.1"
+#define AppVersion "0.2.0-test.2"
 #ifndef BundleDir
-  #define BundleDir "..\dist\ZhiTu-0.2.0-test.1"
+  #define BundleDir "..\dist\ZhiTu-0.2.0-test.2"
 #endif
 
 [Setup]

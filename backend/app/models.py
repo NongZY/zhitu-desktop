@@ -337,6 +337,7 @@ class DocumentSource(Base):
     managed_file: Mapped[str] = mapped_column(String(1000))
     byte_size: Mapped[int] = mapped_column(Integer)
     source_revision: Mapped[str] = mapped_column(String(64), index=True)
+    active_rendition: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -346,6 +347,13 @@ class DocumentImport(Base):
     task_id: Mapped[str] = mapped_column(ForeignKey("import_tasks.id"), primary_key=True)
     source_id: Mapped[str] = mapped_column(ForeignKey("document_sources.id"), index=True)
     encoding: Mapped[str] = mapped_column(String(20), default="auto")
+
+
+class DocumentChapter(Base):
+    """Manual reading landmarks belong to a source, not every future replacement."""
+    __tablename__ = 'document_chapters'
+    source_id: Mapped[str] = mapped_column(ForeignKey('document_sources.id'), primary_key=True)
+    chapter_id: Mapped[int] = mapped_column(ForeignKey('chapters.id'), primary_key=True)
 
 
 class DocumentRendition(Base):

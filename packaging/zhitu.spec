@@ -30,5 +30,5 @@ service_exe = EXE(
 )
 COLLECT(
     gui_exe, service_exe, gui.binaries, gui.datas, service.binaries, service.datas,
-    strip=False, upx=False, name="ZhiTu-0.2.0-test.1",
+    strip=False, upx=False, name="ZhiTu-0.2.0-test.2",
 )
