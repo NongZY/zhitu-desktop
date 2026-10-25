@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import DocumentChunk, ImportTask, Textbook
+from app.models import Chapter, DocumentChunk, DocumentImport, DocumentRendition, DocumentSource, ImportTask, Textbook
 from app.services.pdf_math_layout import extract_math_layout
 from app.services.pdf_outline import apply_outline, extract_outline
 from app.services.pdf_symbols import EXTRACTION_VERSION, PdfSymbolNormalizer
@@ -60,8 +60,13 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
         task = db.get(ImportTask, import_task_id)
         if task is None:
             return {"status": "missing", "task_id": import_task_id}
+        if task.status not in {'queued', 'processing'}:
+            return {'status': task.status, 'task_id': import_task_id}
         textbook = db.get(Textbook, task.textbook_id)
-        if textbook is None or not textbook.file_path:
+        binding = db.get(DocumentImport, task.id)
+        imported_source = db.get(DocumentSource, binding.source_id) if binding else None
+        file_path = imported_source.managed_file if imported_source else textbook.file_path if textbook else None
+        if textbook is None or not file_path:
             task.status = "failed"
             task.message = "教材文件不存在"
             db.commit()
@@ -73,14 +78,18 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
             task.status = "processing"
             task.progress = 5
             task.message = "正在读取 PDF 文件"
-            textbook.parse_status = "processing"
+            if not textbook.file_path:
+                textbook.parse_status = "processing"
             db.commit()
-            local_path, remove_after = materialize(textbook.file_path)
+            local_path, remove_after = materialize(file_path)
             digest = sha256()
             with local_path.open("rb") as source:
                 for block in iter(lambda: source.read(1024 * 1024), b""):
                     digest.update(block)
             source_sha256 = digest.hexdigest()
+            if imported_source and (local_path.stat().st_size != imported_source.byte_size
+                                    or source_sha256 != imported_source.source_revision):
+                raise ValueError('保存的原文件发生变化，请重新导入')
             document = fitz.open(local_path)
             normalizer = PdfSymbolNormalizer(document, source_sha256)
             extracted: list[DocumentChunk] = []
@@ -129,12 +138,18 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
             document = None
             if not extracted:
                 raise ValueError("未提取到可用文字，扫描版 PDF 需要 OCR 识别")
+            latest = db.scalar(select(ImportTask.id).where(ImportTask.textbook_id == textbook.id)
+                               .order_by(ImportTask.created_at.desc(), ImportTask.id.desc()))
+            if latest != task.id:
+                task.status, task.message = 'failed', '已有更新的导入任务，本次结果未替换资料'
+                db.commit()
+                return {'status': 'failed', 'message': task.message}
 
             # Replace PDF-derived content atomically after extraction succeeds.
             # Progress commits above never expose a partially replaced knowledge base.
             db.execute(delete(DocumentChunk).where(
                 DocumentChunk.textbook_id == textbook.id,
-                DocumentChunk.metadata_json["source"].as_string() == "pdf",
+                DocumentChunk.metadata_json["source"].as_string().in_(['pdf', 'structured']),
             ))
             highest_index = db.scalar(select(func.max(DocumentChunk.chunk_index)).where(
                 DocumentChunk.textbook_id == textbook.id,
@@ -143,6 +158,30 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
             for index, chunk in enumerate(extracted, start=first_index):
                 chunk.chunk_index = index
             added_chapters = apply_outline(db, textbook.id, outline, extracted)
+            if imported_source:
+                revision = sha256(f'{imported_source.id}:{EXTRACTION_VERSION}'.encode()).hexdigest()
+                base_locator = dict(source_id=imported_source.id, source_revision=source_sha256,
+                                    rendition_revision=revision, kind='page')
+                for chunk in extracted:
+                    chunk.metadata_json = {**chunk.metadata_json, 'locator': {
+                        **base_locator, 'unit_id': str(chunk.page_number)}}
+                if db.get(DocumentRendition, revision) is None:
+                    blocks = []
+                    chapters = []
+                    seen = set()
+                    by_page = {chunk.page_number: chunk.chapter_id for chunk in extracted}
+                    for number, text in enumerate(page_texts, 1):
+                        chapter_id = by_page.get(number)
+                        blocks.append(dict(id=f'p{number}', kind='paragraph', page=number,
+                                           text=text, chapter_id=chapter_id))
+                        if chapter_id and chapter_id not in seen:
+                            chapter = db.get(Chapter, chapter_id)
+                            chapters.append(dict(id=chapter_id, title=chapter.title, level=1,
+                                                 locator={**base_locator, 'unit_id': str(number)}))
+                            seen.add(chapter_id)
+                    db.add(DocumentRendition(revision=revision, source_id=imported_source.id,
+                        textbook_id=textbook.id, parser_version=EXTRACTION_VERSION,
+                        content=dict(blocks=blocks, chapters=chapters, warnings=[], page_count=len(page_texts))))
             db.add_all(extracted)
             task.status = "completed"
             task.progress = 100
@@ -162,6 +201,7 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
                     "遇到 � 或不完整公式时请点击“查看原页”"
                 )
             textbook.parse_status = "ready"
+            textbook.file_path = file_path
             db.commit()
             return {"status": "completed", "chunks": len(extracted)}
         except Exception as exc:  # worker boundary: persist a safe error for polling
@@ -173,13 +213,20 @@ def process_textbook_pdf(import_task_id: str) -> dict[str, object]:
                 return {"status": "missing", "task_id": import_task_id}
             textbook = db.get(Textbook, task.textbook_id)
             task.status = "failed"
+            image_only = isinstance(exc, ValueError) and str(exc).startswith("未提取到可用文字")
             task.message = (
-                "未提取到可用文字，扫描版 PDF 需要 OCR 识别"
-                if isinstance(exc, ValueError) and str(exc).startswith("未提取到可用文字")
+                "可阅读原页，但未识别到可搜索文字；扫描版 PDF 需要 OCR 识别"
+                if image_only
                 else f"PDF 解析失败：{type(exc).__name__}，请重试或检查后台日志"
             )
-            if textbook is not None:
+            if textbook is not None and not textbook.file_path:
                 textbook.parse_status = "failed"
+                # An initial, valid image-only PDF remains readable even without OCR.
+                # Never let a failed replacement discard a previously published book.
+                if image_only:
+                    textbook.file_path = file_path
+            elif image_only:
+                task.message = '新文件没有可搜索文字，需要 OCR 识别；原教材仍保留，未替换'
             db.commit()
             # SQL exception strings can contain private document text and parameters.
             logger.error("PDF import %s failed (%s)", import_task_id, type(exc).__name__)

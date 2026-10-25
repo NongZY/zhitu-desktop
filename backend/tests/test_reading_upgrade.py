@@ -8,7 +8,8 @@ from app.database import Base
 from app.models import Textbook, User
 
 
-NEW_TABLES = {'reading_progress', 'schema_migrations'}
+NEW_TABLES = {'reading_progress', 'schema_migrations', 'document_sources',
+              'document_imports', 'document_renditions', 'document_positions'}
 
 
 def test_upgrade_adds_version_once_without_changing_legacy_rows(tmp_path):
@@ -32,8 +33,9 @@ def test_upgrade_adds_version_once_without_changing_legacy_rows(tmp_path):
         after = {table.name: connection.execute(select(table)).all() for table in legacy}
         assert after == before
         versions = connection.exec_driver_sql('SELECT version, applied_at FROM schema_migrations').all()
-        assert len(versions) == 1
+        assert len(versions) == 2
         assert versions[0][0] == '20261015_reading_progress_v1'
+        assert versions[1][0] == '20261023_structured_documents_v1'
         assert versions[0][1]
     engine.dispose()
 

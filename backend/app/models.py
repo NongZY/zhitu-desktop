@@ -325,3 +325,47 @@ class SchemaMigration(Base):
 
     version: Mapped[str] = mapped_column(String(100), primary_key=True)
     applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DocumentSource(Base):
+    __tablename__ = "document_sources"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    textbook_id: Mapped[int] = mapped_column(ForeignKey("textbooks.id"), index=True)
+    format: Mapped[str] = mapped_column(String(10))
+    original_name: Mapped[str] = mapped_column(String(255))
+    managed_file: Mapped[str] = mapped_column(String(1000))
+    byte_size: Mapped[int] = mapped_column(Integer)
+    source_revision: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DocumentImport(Base):
+    __tablename__ = "document_imports"
+
+    task_id: Mapped[str] = mapped_column(ForeignKey("import_tasks.id"), primary_key=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("document_sources.id"), index=True)
+    encoding: Mapped[str] = mapped_column(String(20), default="auto")
+
+
+class DocumentRendition(Base):
+    __tablename__ = "document_renditions"
+
+    revision: Mapped[str] = mapped_column(String(64), primary_key=True)
+    source_id: Mapped[str] = mapped_column(ForeignKey("document_sources.id"), index=True)
+    textbook_id: Mapped[int] = mapped_column(ForeignKey("textbooks.id"), index=True)
+    parser_version: Mapped[str] = mapped_column(String(80))
+    content: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DocumentPosition(Base):
+    __tablename__ = "document_positions"
+    __table_args__ = (UniqueConstraint("user_id", "textbook_id"), CheckConstraint("revision > 0"))
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    textbook_id: Mapped[int] = mapped_column(ForeignKey("textbooks.id"), index=True)
+    locator: Mapped[dict] = mapped_column(JSON)
+    revision: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

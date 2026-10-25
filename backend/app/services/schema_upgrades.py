@@ -2,11 +2,16 @@
 
 from sqlalchemy import Engine, select
 
-from app.models import ReadingProgress, SchemaMigration
+from app.models import (DocumentImport, DocumentPosition, DocumentRendition, DocumentSource,
+                        ReadingProgress, SchemaMigration)
 
 
 READING_PROGRESS_VERSION = "20261015_reading_progress_v1"
-READING_TABLE_NAMES = frozenset({"reading_progress", "schema_migrations"})
+DOCUMENT_VERSION = "20261023_structured_documents_v1"
+DOCUMENT_TABLES = (DocumentSource, DocumentImport, DocumentRendition, DocumentPosition)
+READING_TABLE_NAMES = frozenset({"reading_progress", "schema_migrations", *(
+    model.__tablename__ for model in DOCUMENT_TABLES
+)})
 
 
 def apply_schema_upgrades(engine: Engine) -> None:
@@ -21,7 +26,12 @@ def apply_schema_upgrades(engine: Engine) -> None:
         applied = connection.scalar(select(SchemaMigration.version).where(
             SchemaMigration.version == READING_PROGRESS_VERSION,
         ))
-        if applied is not None:
-            return
-        ReadingProgress.__table__.create(connection, checkfirst=True)
-        connection.execute(SchemaMigration.__table__.insert().values(version=READING_PROGRESS_VERSION))
+        if applied is None:
+            ReadingProgress.__table__.create(connection, checkfirst=True)
+            connection.execute(SchemaMigration.__table__.insert().values(version=READING_PROGRESS_VERSION))
+        if connection.scalar(select(SchemaMigration.version).where(
+            SchemaMigration.version == DOCUMENT_VERSION,
+        )) is None:
+            for model in DOCUMENT_TABLES:
+                model.__table__.create(connection, checkfirst=True)
+            connection.execute(SchemaMigration.__table__.insert().values(version=DOCUMENT_VERSION))

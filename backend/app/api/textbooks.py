@@ -1,4 +1,5 @@
 from contextlib import suppress
+from hashlib import sha256
 
 import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -218,19 +219,26 @@ def textbook_page_image(
     db: Session = Depends(get_db),
 ) -> Response:
     textbook = owned_textbook_or_404(db, textbook_id, current_user.id)
+    return render_page_image(textbook.file_path, page_number)
+
+
+def render_page_image(file_path: str | None, page_number: int, expected_sha256: str | None = None) -> Response:
     headers = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"}
-    if not textbook.file_path:
+    if not file_path:
         raise HTTPException(status_code=404, detail="教材原文件不存在", headers=headers)
     if page_number < 1:
         raise HTTPException(status_code=404, detail="原页不存在", headers=headers)
     local_path, remove_after = None, False
     try:
-        local_path, remove_after = materialize(textbook.file_path)
+        local_path, remove_after = materialize(file_path)
         if not local_path.is_file():
             raise HTTPException(status_code=404, detail="教材原文件不存在", headers=headers)
         # Close the file handle before parsing so even a malformed PDF can be
         # removed on Windows when it was materialized from object storage.
-        with pymupdf.open(stream=local_path.read_bytes(), filetype="pdf") as document:
+        content = local_path.read_bytes()
+        if expected_sha256 and sha256(content).hexdigest() != expected_sha256:
+            raise HTTPException(409, '原文件发生变化，无法准确显示此引用', headers=headers)
+        with pymupdf.open(stream=content, filetype="pdf") as document:
             if page_number > document.page_count:
                 raise HTTPException(status_code=404, detail="原页不存在", headers=headers)
             page = document[page_number - 1]
@@ -280,11 +288,18 @@ def delete_textbook(
     db: Session = Depends(get_db),
 ) -> Response:
     from sqlalchemy import delete
-    from app.models import ReadingProgress
+    from app.models import DocumentImport, DocumentPosition, DocumentRendition, DocumentSource, ReadingProgress
 
     textbook = owned_textbook_or_404(db, textbook_id, current_user.id)
     # SQLite does not enable FK cascades by default; use the same transaction.
     db.execute(delete(ReadingProgress).where(ReadingProgress.textbook_id == textbook.id))
+    db.execute(delete(DocumentPosition).where(DocumentPosition.textbook_id == textbook.id))
+    db.execute(delete(DocumentRendition).where(DocumentRendition.textbook_id == textbook.id))
+    source_ids = select(DocumentSource.id).where(DocumentSource.textbook_id == textbook.id)
+    db.execute(delete(DocumentImport).where(DocumentImport.source_id.in_(source_ids)))
+    db.execute(delete(DocumentSource).where(DocumentSource.textbook_id == textbook.id))
+    db.execute(delete(ImportTask).where(ImportTask.textbook_id == textbook.id))
+    db.execute(delete(DocumentChunk).where(DocumentChunk.textbook_id == textbook.id))
     db.delete(textbook)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

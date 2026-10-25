@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from heapq import nlargest
 from collections import Counter
 
 import httpx
@@ -85,11 +86,10 @@ def ask(
         stmt = stmt.where(DocumentChunk.textbook_id == payload.textbook_id)
     if payload.chapter_id is not None:
         stmt = stmt.where(DocumentChunk.chapter_id.in_(chapter_scope_ids(db, chapter)))
-    chunks = db.scalars(stmt.order_by(DocumentChunk.id).limit(1000)).all()
-    ranked = sorted(
+    chunks = db.scalars(stmt.order_by(DocumentChunk.id).execution_options(yield_per=100))
+    ranked = nlargest(payload.top_k,
         ((chunk, _score(payload.question, chunk.content)) for chunk in chunks),
         key=lambda item: item[1],
-        reverse=True,
     )
     selected = [(chunk, score) for chunk, score in ranked[: payload.top_k] if score > 0]
     citations: list[RagCitation] = []
@@ -106,6 +106,7 @@ def ask(
                 page_number=chunk.page_number,
                 excerpt=chunk.content[:500],
                 score=score,
+                locator=(chunk.metadata_json or {}).get('locator'),
             )
         )
     if not citations:

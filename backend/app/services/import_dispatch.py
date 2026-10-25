@@ -23,14 +23,23 @@ def _fail(task_id: str, message: str) -> None:
             task.status = "failed"
             task.message = message
             textbook = db.get(Textbook, task.textbook_id)
-            if textbook is not None:
+            if textbook is not None and not textbook.file_path:
                 textbook.parse_status = "failed"
             db.commit()
 
 
 def _run(task_id: str) -> None:
     try:
-        process_textbook_pdf.run(task_id)
+        from app.models import DocumentImport, DocumentSource
+        with SessionLocal() as db:
+            binding = db.get(DocumentImport, task_id)
+            source = db.get(DocumentSource, binding.source_id) if binding else None
+            structured = source is not None and source.format != 'pdf'
+        if structured:
+            from app.services.documents import process_document_import
+            process_document_import(task_id)
+        else:
+            process_textbook_pdf.run(task_id)
     except Exception as exc:
         logger.error("Local PDF task failed (%s)", type(exc).__name__)
         _fail(task_id, "课本整理未完成，请重新上传；原有学习记录仍保留。")

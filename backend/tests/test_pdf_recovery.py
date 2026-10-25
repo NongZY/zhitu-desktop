@@ -125,3 +125,6 @@ def test_image_only_pdf_reports_ocr_requirement(client, create_learner, monkeypa
     assert result["status"] == "failed"
     assert "OCR" in result["message"]
     assert result["progress"] != 100
+    # OCR failure is not a failure to read the original scanned pages.
+    assert client.get(f'/api/v1/textbooks/{book_id}/reader', headers=headers).json()['page_count'] == 1
+    assert client.get(f'/api/v1/textbooks/{book_id}/pages/1/image', headers=headers).status_code == 200

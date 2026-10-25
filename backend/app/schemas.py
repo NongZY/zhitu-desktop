@@ -366,6 +366,7 @@ class RagAskRequest(BaseModel):
 
 
 class RagCitation(BaseModel):
+    locator: dict | None = None
     chunk_id: int
     textbook_id: int
     textbook_title: str

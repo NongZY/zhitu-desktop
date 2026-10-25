@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import models  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.exams import router as exams_router
+from app.api.documents import router as documents_router
 from app.api.imports import router as imports_router
 from app.api.learning import router as learning_router
 from app.api.questions import router as questions_router
@@ -64,7 +65,7 @@ def create_app(*, desktop_profile: DesktopProfile | None = None) -> FastAPI:
                                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
         application.include_router(auth_router, prefix=settings.api_prefix)
     for router in (textbooks_router, imports_router, questions_router, exams_router,
-                   learning_router, reading_router, rag_router):
+                   learning_router, reading_router, rag_router, documents_router):
         application.include_router(router, prefix=settings.api_prefix)
     application.get(f"{settings.api_prefix}/health", tags=["系统"])(health)
     application.get("/health", include_in_schema=False)(health)
