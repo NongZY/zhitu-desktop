@@ -115,6 +115,11 @@ def fill_basic_questions(
     question_types: list[str] | None = None,
     knowledge_point_ids: list[int] | None = None,
 ) -> int:
+    from app.desktop.profile import current_profile
+    if current_profile() is not None:
+        # Desktop learners first preview/confirm body-grounded candidates in
+        # textbook_practice; never silently infer new exercises from a title.
+        return 0
     if "数学" not in book.subject or count <= 0:
         return 0
     kinds = question_types or list(PRACTICE_TYPES)

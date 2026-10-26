@@ -199,6 +199,7 @@ class ExamPaperQuestion(Base):
     question_id: Mapped[int] = mapped_column(ForeignKey("questions.id"), index=True)
     order_index: Mapped[int] = mapped_column(Integer)
     score: Mapped[float] = mapped_column(Float, default=5)
+    snapshot: Mapped[dict | None] = mapped_column(JSON)
 
     paper: Mapped[ExamPaper] = relationship(back_populates="paper_questions")
     question: Mapped[Question] = relationship()
@@ -354,6 +355,46 @@ class DocumentChapter(Base):
     __tablename__ = 'document_chapters'
     source_id: Mapped[str] = mapped_column(ForeignKey('document_sources.id'), primary_key=True)
     chapter_id: Mapped[int] = mapped_column(ForeignKey('chapters.id'), primary_key=True)
+
+
+class PracticeJob(Base):
+    __tablename__ = 'practice_jobs'
+    __table_args__ = (UniqueConstraint('owner_id', 'request_id'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    textbook_id: Mapped[int] = mapped_column(ForeignKey('textbooks.id'), index=True)
+    request_id: Mapped[str] = mapped_column(String(80))
+    rendition_revision: Mapped[str | None] = mapped_column(String(64))
+    parameters: Mapped[dict] = mapped_column(JSON)
+    units: Mapped[list] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(30), default='queued')
+    message: Mapped[str] = mapped_column(String(500), default='等待补充练习')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class PracticeCandidate(Base):
+    __tablename__ = 'practice_candidates'
+    __table_args__ = (UniqueConstraint('job_id', 'fingerprint'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey('practice_jobs.id'), index=True)
+    chapter_id: Mapped[int | None] = mapped_column(ForeignKey('chapters.id'))
+    content: Mapped[dict] = mapped_column(JSON)
+    evidence: Mapped[list] = mapped_column(JSON)
+    provenance: Mapped[dict] = mapped_column(JSON)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    saved_question_id: Mapped[int | None] = mapped_column(ForeignKey('questions.id'))
+
+
+class QuestionEvidence(Base):
+    __tablename__ = 'question_evidence'
+    __table_args__ = (UniqueConstraint('textbook_id', 'rendition_revision', 'fingerprint'),)
+    question_id: Mapped[int] = mapped_column(ForeignKey('questions.id'), primary_key=True)
+    textbook_id: Mapped[int] = mapped_column(ForeignKey('textbooks.id'))
+    candidate_id: Mapped[str] = mapped_column(String(36), unique=True)
+    rendition_revision: Mapped[str] = mapped_column(String(64))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    evidence: Mapped[list] = mapped_column(JSON)
+    provenance: Mapped[dict] = mapped_column(JSON)
 
 
 class DocumentRendition(Base):

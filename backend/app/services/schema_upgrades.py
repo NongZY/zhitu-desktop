@@ -3,6 +3,7 @@
 from sqlalchemy import Engine, inspect, select
 
 from app.models import (DocumentChapter, DocumentImport, DocumentPosition, DocumentRendition, DocumentSource,
+                        PracticeJob, PracticeCandidate, QuestionEvidence,
                         ReadingProgress, SchemaMigration)
 
 
@@ -10,8 +11,10 @@ READING_PROGRESS_VERSION = "20261015_reading_progress_v1"
 DOCUMENT_VERSION = "20261023_structured_documents_v1"
 ACTIVATION_VERSION = '20261025_document_activation_v1'
 DIRECTORY_VERSION = '20261025_document_directory_v1'
+PRACTICE_VERSION = '20261026_textbook_practice_v1'
 DOCUMENT_TABLES = (DocumentSource, DocumentImport, DocumentRendition, DocumentPosition)
-READING_TABLE_NAMES = frozenset({"reading_progress", "schema_migrations", 'document_chapters', *(
+READING_TABLE_NAMES = frozenset({"reading_progress", "schema_migrations", 'document_chapters',
+    'practice_jobs', 'practice_candidates', 'question_evidence', *(
     model.__tablename__ for model in DOCUMENT_TABLES
 )})
 
@@ -45,3 +48,10 @@ def apply_schema_upgrades(engine: Engine) -> None:
         if connection.scalar(select(SchemaMigration.version).where(SchemaMigration.version == DIRECTORY_VERSION)) is None:
             DocumentChapter.__table__.create(connection, checkfirst=True)
             connection.execute(SchemaMigration.__table__.insert().values(version=DIRECTORY_VERSION))
+        if connection.scalar(select(SchemaMigration.version).where(SchemaMigration.version == PRACTICE_VERSION)) is None:
+            for model in (PracticeJob, PracticeCandidate, QuestionEvidence):
+                model.__table__.create(connection, checkfirst=True)
+            if 'exam_paper_questions' in inspect(connection).get_table_names():
+                if 'snapshot' not in {c['name'] for c in inspect(connection).get_columns('exam_paper_questions')}:
+                    connection.exec_driver_sql('ALTER TABLE exam_paper_questions ADD COLUMN snapshot JSON')
+            connection.execute(SchemaMigration.__table__.insert().values(version=PRACTICE_VERSION))

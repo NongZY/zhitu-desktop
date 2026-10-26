@@ -290,8 +290,18 @@ def delete_textbook(
 ) -> Response:
     from sqlalchemy import delete
     from app.models import DocumentImport, DocumentPosition, DocumentRendition, DocumentSource, ReadingProgress
+    from app.models import PracticeJob, PracticeCandidate, QuestionEvidence, Question, ExamPaperQuestion, AnswerDetail
 
     textbook = owned_textbook_or_404(db, textbook_id, current_user.id)
+    question_ids = select(Question.id).where(Question.textbook_id == textbook.id)
+    if (db.scalar(select(ExamPaperQuestion.id).where(ExamPaperQuestion.question_id.in_(question_ids)).limit(1))
+            or db.scalar(select(AnswerDetail.id).where(AnswerDetail.question_id.in_(question_ids)).limit(1))):
+        raise HTTPException(409, '这本教材已有练习记录，需要保留用于查看历史；可替换资料继续学习')
+    jobs = select(PracticeJob.id).where(PracticeJob.textbook_id == textbook.id)
+    db.execute(delete(PracticeCandidate).where(PracticeCandidate.job_id.in_(jobs)))
+    db.execute(delete(PracticeJob).where(PracticeJob.textbook_id == textbook.id))
+    db.execute(delete(QuestionEvidence).where(QuestionEvidence.textbook_id == textbook.id))
+    db.execute(delete(Question).where(Question.textbook_id == textbook.id))
     # SQLite does not enable FK cascades by default; use the same transaction.
     db.execute(delete(ReadingProgress).where(ReadingProgress.textbook_id == textbook.id))
     db.execute(delete(DocumentPosition).where(DocumentPosition.textbook_id == textbook.id))
@@ -424,6 +434,10 @@ def delete_chapter(
 
     chapter = owned_chapter_or_404(db, chapter_id, current_user.id)
     chapter_ids = chapter_scope_ids(db, chapter)
+    from app.models import PracticeJob
+    for job in db.scalars(select(PracticeJob).where(PracticeJob.textbook_id == chapter.textbook_id)):
+        if any(unit['chapter_id'] in chapter_ids for unit in job.units):
+            job.status, job.message = 'obsolete', '原章节已删除，旧候选仍可查看，请按当前教材重新补题。'
     db.execute(delete(DocumentChapter).where(DocumentChapter.chapter_id.in_(chapter_ids)))
     db.delete(chapter)
     db.commit()

@@ -33,10 +33,12 @@ def record_summary(record: ExamRecord, paper: ExamPaper) -> dict:
     }
 
 
-def answer_evidence(detail: AnswerDetail, max_score: float) -> dict:
-    question = detail.question
+def answer_evidence(detail: AnswerDetail, max_score: float, paper_question=None) -> dict:
+    from app.services.question_snapshots import frozen_question
+    question = frozen_question(paper_question) if paper_question is not None else detail.question
     point = question.knowledge_point
     return {
+        "snapshot_verified": bool(paper_question is not None and paper_question.snapshot),
         "question_id": question.id,
         "stem": question.stem,
         "question_type": question.question_type,

@@ -9,7 +9,8 @@ from app.models import Textbook, User
 
 
 NEW_TABLES = {'reading_progress', 'schema_migrations', 'document_sources',
-              'document_imports', 'document_renditions', 'document_positions', 'document_chapters'}
+              'document_imports', 'document_renditions', 'document_positions', 'document_chapters',
+              'practice_jobs', 'practice_candidates', 'question_evidence'}
 
 
 def test_upgrade_adds_version_once_without_changing_legacy_rows(tmp_path):
@@ -33,12 +34,26 @@ def test_upgrade_adds_version_once_without_changing_legacy_rows(tmp_path):
         after = {table.name: connection.execute(select(table)).all() for table in legacy}
         assert after == before
         versions = connection.exec_driver_sql('SELECT version, applied_at FROM schema_migrations').all()
-        assert len(versions) == 4
+        assert len(versions) == 5
         assert versions[0][0] == '20261015_reading_progress_v1'
         assert versions[1][0] == '20261023_structured_documents_v1'
         assert versions[2][0] == '20261025_document_activation_v1'
         assert versions[3][0] == '20261025_document_directory_v1'
+        assert versions[4][0] == '20261026_textbook_practice_v1'
         assert versions[0][1]
+    engine.dispose()
+
+
+def test_legacy_exam_upgrade_preserves_ids_and_does_not_fabricate_past_snapshot(tmp_path):
+    from app.services.schema_upgrades import apply_schema_upgrades
+    engine = create_engine(f"sqlite:///{(tmp_path / 'old-exams.db').as_posix()}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql('CREATE TABLE exam_paper_questions (id INTEGER PRIMARY KEY, paper_id INTEGER, question_id INTEGER, order_index INTEGER, score FLOAT)')
+        connection.exec_driver_sql('INSERT INTO exam_paper_questions VALUES (41, 3, 17, 1, 5)')
+    apply_schema_upgrades(engine)
+    apply_schema_upgrades(engine)
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql('SELECT id, paper_id, question_id, score, snapshot FROM exam_paper_questions').one() == (41, 3, 17, 5, None)
     engine.dispose()
 
 

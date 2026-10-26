@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_, and_
 from sqlalchemy.orm import Session, selectinload
 
 from app.access import owned_global_knowledge_point_ids
@@ -296,7 +296,7 @@ def exam_detail(
         **record_summary(record, paper),
         "textbook_title": textbook.title if textbook else None,
         "details": [
-            answer_evidence(answers[item.question_id], item.score)
+            answer_evidence(answers[item.question_id], item.score, item)
             for item in paper.paper_questions
             if item.question_id in answers
         ],
@@ -330,7 +330,7 @@ def knowledge_point_detail(
         )
     )
     evidence = db.execute(
-        select(AnswerDetail, ExamRecord, ExamPaperQuestion.score)
+        select(AnswerDetail, ExamRecord, ExamPaperQuestion)
         .join(ExamRecord, ExamRecord.id == AnswerDetail.record_id)
         .join(Question, Question.id == AnswerDetail.question_id)
         .join(
@@ -340,7 +340,11 @@ def knowledge_point_detail(
         )
         .where(
             ExamRecord.user_id == current_user.id,
-            Question.knowledge_point_id.in_([local.id for local, _, _ in mappings]),
+            or_(
+                ExamPaperQuestion.snapshot['knowledge_point_id'].as_integer().in_([local.id for local, _, _ in mappings]),
+                and_(ExamPaperQuestion.snapshot['id'].as_integer().is_(None),
+                     Question.knowledge_point_id.in_([local.id for local, _, _ in mappings])),
+            ),
         )
         .options(selectinload(AnswerDetail.question).selectinload(Question.knowledge_point))
         .order_by(ExamRecord.submitted_at.desc(), AnswerDetail.id.desc())
@@ -369,11 +373,11 @@ def knowledge_point_detail(
         ],
         "recent_answers": [
             {
-                **answer_evidence(detail, max_score),
+                **answer_evidence(detail, paper_question.score, paper_question),
                 "record_id": record.id,
                 "submitted_at": record.submitted_at,
             }
-            for detail, record, max_score in evidence
+            for detail, record, paper_question in evidence
         ],
     }
 

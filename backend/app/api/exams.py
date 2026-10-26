@@ -40,6 +40,7 @@ from app.services.adaptive import (
 )
 from app.services.basic_practice import PRACTICE_TYPES, fill_basic_questions
 from app.services.pdf_outline import chapter_scope_ids
+from app.services.question_snapshots import frozen_question, snapshot_question
 
 router = APIRouter(prefix="/exams", tags=["模拟考试"])
 
@@ -59,7 +60,7 @@ def _paper_read(paper: ExamPaper) -> ExamPaperRead:
     questions = [
         ExamQuestionRead(
             **{
-                **item.question.__dict__,
+                **frozen_question(item).__dict__,
                 "order_index": item.order_index,
                 "score": item.score,
             }
@@ -227,6 +228,7 @@ def generate_exam(
                 question_id=question.id,
                 order_index=index,
                 score=payload.score_per_question,
+                snapshot=snapshot_question(question),
             )
         )
     db.commit()
@@ -283,9 +285,10 @@ def submit_exam(
     graded_total_score = 0.0
     results: list[AnswerResult] = []
     for row in sorted(paper.paper_questions, key=lambda item: item.order_index):
+        question = frozen_question(row)
         answer_item = submitted.get(row.question_id)
         user_answer = answer_item.answer if answer_item is not None else None
-        is_correct = grade_objective(row.question, user_answer)
+        is_correct = grade_objective(question, user_answer)
         item_score = row.score if is_correct is True else 0.0
         if is_correct is None:
             pending_count += 1
@@ -333,16 +336,16 @@ def submit_exam(
             ),
         )
         db.add(detail)
-        update_mastery(db, current_user.id, row.question, is_correct)
+        update_mastery(db, current_user.id, question, is_correct)
         results.append(
             AnswerResult(
                 question_id=row.question_id,
                 user_answer=user_answer,
-                correct_answer=row.question.correct_answer,
+                correct_answer=question.correct_answer,
                 is_correct=is_correct,
                 score=item_score,
                 max_score=row.score,
-                explanation=row.question.explanation,
+                explanation=question.explanation,
             )
         )
     record.score = score

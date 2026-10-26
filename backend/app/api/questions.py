@@ -9,7 +9,7 @@ from app.access import (
     owned_textbook_or_404,
 )
 from app.database import get_db
-from app.models import Question, Textbook, User
+from app.models import Question, Textbook, User, ExamPaperQuestion, QuestionEvidence, PracticeCandidate
 from app.schemas import (
     BatchImportResult,
     QuestionBatchImport,
@@ -171,6 +171,12 @@ def delete_question(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    db.delete(owned_question_or_404(db, question_id, current_user.id))
+    from sqlalchemy import delete, update
+    question = owned_question_or_404(db, question_id, current_user.id)
+    if db.scalar(select(ExamPaperQuestion.id).where(ExamPaperQuestion.question_id == question_id).limit(1)):
+        raise HTTPException(409, '这道题已经用于练习，请设为暂不使用，以保留历史记录')
+    db.execute(delete(QuestionEvidence).where(QuestionEvidence.question_id == question_id))
+    db.execute(update(PracticeCandidate).where(PracticeCandidate.saved_question_id == question_id).values(saved_question_id=None))
+    db.delete(question)
     db.commit()
     return Response(status_code=204)
