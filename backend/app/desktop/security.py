@@ -50,6 +50,13 @@ class DesktopBoundary:
             )
             return
 
+        root = self.profile.root_dir or self.profile.data_dir
+        if (scope['method'] not in {'GET', 'HEAD', 'OPTIONS'} and
+            not scope['path'].startswith('/api/v1/maintenance/') and
+            (root / 'pending-space.json').exists()):
+            await JSONResponse({'detail': '已安排恢复资料，请重启软件；也可以在设置中取消恢复后继续学习'}, status_code=409)(scope, receive, send)
+            return
+
         async def secure_send(message):
             if message["type"] == "http.response.start":
                 message.setdefault("headers", []).extend(

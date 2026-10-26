@@ -132,6 +132,7 @@ class DesktopHost:
     def start(self, data_dir: Path, static_dir: Path) -> DesktopContext:
         if self._process is not None:
             raise RuntimeError("本地服务已启动")
+        self.data_dir = data_dir.resolve()
         command, working_dir = service_launch()
         # -I ignores Python injection variables; desktop Settings separately excludes all external config.
         self._process = subprocess.Popen(

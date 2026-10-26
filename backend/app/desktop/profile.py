@@ -26,6 +26,7 @@ class DesktopProfile:
     data_dir: Path
     origin: str
     session_token: str = field(repr=False)
+    root_dir: Path | None = None
 
     def __post_init__(self):
         parsed = urlsplit(self.origin)

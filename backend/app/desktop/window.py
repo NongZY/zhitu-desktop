@@ -83,6 +83,51 @@ class DesktopBridge:
         self._check_origin()
         self._closer.respond_close(request_id, decision)
 
+    def open_data_dir(self):
+        self._check_origin()
+        import os
+        os.startfile(str(self._host.data_dir))
+        return {'opened': True}
+
+    def export_backup(self, backup_id: str):
+        self._check_origin()
+        from app.desktop.maintenance import identifier, MAX_ARCHIVE
+        from pathlib import Path
+        import os
+        import httpx
+        import webview
+        uid = identifier(backup_id)
+        chosen = self._window.create_file_dialog(webview.FileDialog.SAVE,
+            save_filename=f'知途备份-{uid[:8]}.zip', file_types=('知途备份 (*.zip)',))
+        if not chosen:
+            return {'saved': False}
+        self._check_origin()
+        path = Path(chosen[0] if isinstance(chosen, (tuple, list)) else chosen)
+        temporary = path.with_name(path.name + '.' + uuid4().hex + '.part')
+        request = SimpleNamespace(url=self._host.context['apiBaseUrl'] + '/maintenance/backups/' + uid,
+                                  method='GET', headers={})
+        self._host.authorize_request(request)
+        try:
+            with httpx.Client(trust_env=False, follow_redirects=False, timeout=120) as client:
+                with client.stream('GET', request.url, headers=request.headers) as response:
+                    response.raise_for_status()
+                    size = 0
+                    with temporary.open('xb') as output:
+                        for chunk in response.iter_bytes():
+                            size += len(chunk)
+                            if size > MAX_ARCHIVE:
+                                raise ValueError()
+                            output.write(chunk)
+                        output.flush()
+                        os.fsync(output.fileno())
+            self._check_origin()
+            os.replace(temporary, path)
+        except Exception:
+            raise RuntimeError('备份没有导出，原有文件未改动，请重试') from None
+        finally:
+            temporary.unlink(missing_ok=True)
+        return {'saved': True}
+
 
 class CloseCoordinator:
     def __init__(self, host, window, ask, frontend_timeout: float = 8):

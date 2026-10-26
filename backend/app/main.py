@@ -63,8 +63,10 @@ def create_app(*, desktop_profile: DesktopProfile | None = None) -> FastAPI:
     if desktop_profile:
         from app.desktop.security import configure_desktop_security
         from app.api.desktop_settings import router as settings_router
+        from app.api.desktop_maintenance import router as maintenance_router
         configure_desktop_security(application, desktop_profile)
         application.include_router(settings_router, prefix=settings.api_prefix)
+        application.include_router(maintenance_router, prefix=settings.api_prefix)
     else:
         application.add_middleware(CORSMiddleware, allow_origins=settings.cors_origin_list,
                                    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])

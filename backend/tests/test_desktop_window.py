@@ -111,6 +111,54 @@ def test_bridge_refuses_untrusted_page():
         bridge.get_context()
 
 
+def test_backup_export_is_scoped_to_server_id_and_origin(tmp_path, monkeypatch):
+    import httpx
+    import webview
+    from uuid import uuid4
+    window, host = FakeWindow(), fake_host()
+    destination = tmp_path / 'export.zip'
+    window.create_file_dialog = lambda *a, **k: (str(destination),)
+    host.authorize_request = lambda request: request.headers.update({'X-ZhiTu-Desktop-Token': 'private'})
+    bridge = DesktopBridge(host)
+    bridge._attach(window, None)
+    calls = []
+    def respond(request):
+        calls.append(request)
+        assert request.headers['X-ZhiTu-Desktop-Token'] == 'private'
+        return httpx.Response(200, content=b'PK-backup-fixture')
+    original_client = httpx.Client
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: original_client(transport=httpx.MockTransport(respond), **kwargs))
+    uid = str(uuid4())
+    assert bridge.export_backup(uid)['saved']
+    assert destination.read_bytes() == b'PK-backup-fixture'
+    assert str(calls[0].url) == ORIGIN + '/api/v1/maintenance/backups/' + uid
+    with pytest.raises(ValueError):
+        bridge.export_backup('../../anything')
+    window.url = 'https://evil.invalid'
+    with pytest.raises(RuntimeError):
+        bridge.export_backup(uid)
+    assert len(calls) == 1
+
+
+def test_backup_export_cancel_and_failure_keep_existing_file(tmp_path, monkeypatch):
+    import httpx
+    from uuid import uuid4
+    window, host = FakeWindow(), fake_host()
+    destination = tmp_path / 'export.zip'
+    destination.write_bytes(b'previous')
+    window.create_file_dialog = lambda *a, **k: None
+    host.authorize_request = lambda request: None
+    bridge = DesktopBridge(host)
+    bridge._attach(window, None)
+    assert bridge.export_backup(str(uuid4())) == {'saved': False}
+    window.create_file_dialog = lambda *a, **k: (str(destination),)
+    original_client = httpx.Client
+    monkeypatch.setattr(httpx, 'Client', lambda **kwargs: original_client(transport=httpx.MockTransport(lambda r: httpx.Response(500)), **kwargs))
+    with pytest.raises(RuntimeError):
+        bridge.export_backup(str(uuid4()))
+    assert destination.read_bytes() == b'previous'
+
+
 @pytest.mark.parametrize("decision,exits", [("stay", False), ("ready", True), ("discard", True)])
 def test_close_handshake_waits_and_is_idempotent(decision, exits):
     window = FakeWindow()

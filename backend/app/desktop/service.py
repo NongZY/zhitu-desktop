@@ -34,7 +34,10 @@ def serve_from_parent_streams(reader: TextIO, writer: TextIO) -> int:
             listener.bind(("127.0.0.1", 0))
             listener.listen(128)
             origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
-            profile = DesktopProfile(data_dir.resolve(), origin, token)
+            from app.desktop.maintenance import resolve_active_space, backup_before_upgrade
+            root_dir = data_dir.resolve()
+            profile = DesktopProfile(resolve_active_space(root_dir), origin, token, root_dir=root_dir)
+            backup_before_upgrade(root_dir, profile.data_dir)
             install_profile(profile)
             import uvicorn
 
