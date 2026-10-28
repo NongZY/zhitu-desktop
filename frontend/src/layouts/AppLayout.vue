@@ -14,6 +14,7 @@ import {
   Reading,
   Tickets,
   TrendCharts,
+  Setting,
 } from '@element-plus/icons-vue'
 import { useWorkspaceStore } from '../stores/workspace'
 
@@ -31,10 +32,12 @@ const items = [
   { path: '/dashboard', label: '学习总览', icon: HomeFilled },
   { path: '/textbooks', label: '我的课本', icon: Reading },
   { path: '/questions', label: '我的题库', icon: Tickets },
+  { path: '/practice/fill', label: '教材补题', icon: Notebook },
   { path: '/exam/generate', label: '做练习', icon: DocumentChecked },
   { path: '/results', label: '学习记录', icon: DataAnalysis },
   { path: '/rag', label: '问一问', icon: ChatDotRound },
   { path: '/learning', label: '学习进度', icon: TrendCharts },
+  { path: '/settings', label: '设置', icon: Setting },
 ]
 
 const activePath = computed(() => {

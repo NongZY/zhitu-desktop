@@ -430,15 +430,19 @@ def delete_chapter(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    from sqlalchemy import delete
-
     chapter = owned_chapter_or_404(db, chapter_id, current_user.id)
     chapter_ids = chapter_scope_ids(db, chapter)
-    from app.models import PracticeJob
+    from sqlalchemy import delete, update
+    from app.models import PracticeJob, PracticeCandidate
     for job in db.scalars(select(PracticeJob).where(PracticeJob.textbook_id == chapter.textbook_id)):
         if any(unit['chapter_id'] in chapter_ids for unit in job.units):
             job.status, job.message = 'obsolete', '原章节已删除，旧候选仍可查看，请按当前教材重新补题。'
     db.execute(delete(DocumentChapter).where(DocumentChapter.chapter_id.in_(chapter_ids)))
+    points = list(db.scalars(select(LocalKnowledgePoint.id).where(LocalKnowledgePoint.chapter_id.in_(chapter_ids))))
+    db.execute(delete(KnowledgePointMapping).where(KnowledgePointMapping.local_id.in_(points)))
+    db.execute(update(Question).where(Question.knowledge_point_id.in_(points)).values(knowledge_point_id=None))
+    for model in (Question, DocumentChunk, PracticeCandidate):
+        db.execute(update(model).where(model.chapter_id.in_(chapter_ids)).values(chapter_id=None))
     db.delete(chapter)
     db.commit()
     return Response(status_code=204)
@@ -541,6 +545,9 @@ def delete_knowledge_point(
     db: Session = Depends(get_db),
 ) -> Response:
     point = owned_knowledge_point_or_404(db, point_id, current_user.id)
+    from sqlalchemy import delete, update
+    db.execute(delete(KnowledgePointMapping).where(KnowledgePointMapping.local_id == point.id))
+    db.execute(update(Question).where(Question.knowledge_point_id == point.id).values(knowledge_point_id=None))
     db.delete(point)
     db.commit()
     return Response(status_code=204)

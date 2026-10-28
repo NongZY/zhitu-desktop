@@ -96,6 +96,7 @@ def serve_from_parent_streams(reader: TextIO, writer: TextIO) -> int:
                 )
                 emit(dict(type="ready", schemaVersion=1, origin=origin, context=context))
                 from app.services.import_dispatch import active_import_count, shutdown_local_imports
+                from app.services.textbook_practice import active_practice_count
 
                 while not serving.done():
                     try:
@@ -106,7 +107,7 @@ def serve_from_parent_streams(reader: TextIO, writer: TextIO) -> int:
                     if kind == "status":
                         emit(
                             dict(
-                                type="status", request_id=rid, active_imports=active_import_count()
+                                type="status", request_id=rid, active_imports=active_import_count() + active_practice_count()
                             )
                         )
                     elif kind == "shutdown":

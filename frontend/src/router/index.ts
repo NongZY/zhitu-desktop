@@ -13,6 +13,8 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../layouts/AppLayout.vue'),
     children: [
       { path: '', redirect: '/dashboard' },
+      { path: 'settings', name: 'settings', component: () => import('../views/SettingsView.vue'), meta: { title: '设置' } },
+      { path: 'practice/fill', name: 'practice-fill', component: () => import('../views/PracticeFillView.vue'), meta: { title: '教材补题' } },
       { path: 'dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue'), meta: { title: '学习总览' } },
       { path: 'textbooks', name: 'textbooks', component: () => import('../views/TextbooksView.vue'), meta: { title: '我的课本' } },
       { path: 'textbooks/:id', name: 'textbook-detail', component: () => import('../views/TextbookEntryView.vue'), meta: { title: '教材详情' } },

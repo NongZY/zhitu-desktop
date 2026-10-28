@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import MathContent from '../components/MathContent.vue'
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { documentLink } from '../api/documents'
 import { ChatDotRound, Document, Promotion, Reading, RefreshLeft } from '@element-plus/icons-vue'
 import PageHeader from '../components/PageHeader.vue'
 import { ragApi, textbookApi, type Citation, type Textbook } from '../api'
 import { getApiErrorMessage } from '../api/http'
+import { desktopSettings, type AISettings } from '../api/desktopSettings'
 
-interface ChatMessage { role: 'user' | 'assistant'; content: string; citations?: Citation[]; error?: boolean }
+interface ChatMessage { role: 'user' | 'assistant'; content: string; citations?: Citation[]; error?: boolean; mode?: string; notice?: string }
 
 const route = useRoute()
 const router = useRouter()
@@ -18,6 +19,8 @@ function openCitation(citation: Citation) {
 }
 const books = ref<Textbook[]>([])
 const textbookId = ref<string | number>()
+const useAI = ref(false), ai = ref<AISettings | null>(null)
+watch(textbookId, () => { useAI.value = false })
 const chapterId = ref<string | number>()
 const chapterTitle = ref('')
 const question = ref('')
@@ -34,8 +37,8 @@ async function send(preset?: string) {
   sending.value = true
   await scrollBottom()
   try {
-    const answer = await ragApi.ask({ question: content, textbook_id: textbookId.value, chapter_id: chapterId.value, top_k: 5 })
-    messages.value.push({ role: 'assistant', content: answer.answer, citations: answer.citations })
+    const answer = await ragApi.ask({ question: content, textbook_id: textbookId.value, chapter_id: chapterId.value, top_k: 5, use_ai: useAI.value })
+    messages.value.push({ role: 'assistant', content: answer.answer, citations: answer.citations, mode: answer.mode, notice: answer.notice })
   } catch (err) {
     messages.value.push({ role: 'assistant', content: getApiErrorMessage(err, '问答服务暂不可用，请稍后重试。'), error: true })
   } finally {
@@ -69,12 +72,13 @@ onMounted(async () => {
       if (chapter) { chapterId.value = chapter.id; chapterTitle.value = chapter.title }
     }
   } catch { books.value = [] }
+  try { ai.value = await desktopSettings.readAI() } catch { ai.value = null }
 })
 </script>
 
 <template>
   <div>
-    <PageHeader eyebrow="Grounded Q&A" title="教材问答" description="回答严格基于已解析教材片段，并附带章节、页码与原文引用。">
+    <PageHeader title="教材问答" description="默认查找本地原文；需要 AI 解释时，可选择发送相关片段。">
       <template #actions><el-button :icon="RefreshLeft" @click="reset">新对话</el-button></template>
     </PageHeader>
     <el-alert v-if="chapterId" type="info" show-icon :title="`当前仅检索：${chapterTitle}（含子章节）`" @close="chapterId = undefined" />
@@ -85,13 +89,14 @@ onMounted(async () => {
           <div v-if="!messages.length" class="chat-empty"><span><el-icon><Reading /></el-icon></span><h2>从教材中寻找答案</h2><p>选择一本教材并提出问题。系统先检索相关原文，再生成带引用的回答。</p><div><button v-for="item in suggestions" :key="item" type="button" @click="send(item)">{{ item }}</button></div></div>
           <article v-for="(message, index) in messages" :key="index" class="message" :class="message.role">
             <span class="message-avatar">{{ message.role === 'user' ? '我' : '知' }}</span>
-            <div class="message-body"><p :class="{ error: message.error }"><MathContent :text="message.content" /></p><div v-if="message.citations?.length" class="citations"><strong>引用来源（点击查看原文）</strong><button v-for="(citation, citationIndex) in message.citations" :key="citation.chunk_id || citationIndex" type="button" @click="openCitation(citation)"><el-icon><Document /></el-icon><span><b>[{{ citationIndex + 1 }}] {{ citation.textbook_title }}</b><small>{{ citation.chapter_title || '教材正文' }}<template v-if="citation.page"> · 第 {{ citation.page }} 页</template><template v-else-if="citation.locator?.kind === 'slide'"> · 幻灯片 {{ citation.locator.unit_id }}</template></small><em>{{ citation.content }}</em></span></button></div></div>
+            <div class="message-body"><small v-if="message.role === 'assistant'">{{ message.mode === 'ai' ? 'AI 解释' : '本地资料' }}<template v-if="message.notice"> · {{ message.notice }}</template></small><p :class="{ error: message.error }"><MathContent :text="message.content" /></p><div v-if="message.citations?.length" class="citations"><strong>引用来源（点击查看原文）</strong><button v-for="(citation, citationIndex) in message.citations" :key="citation.chunk_id || citationIndex" type="button" @click="openCitation(citation)"><el-icon><Document /></el-icon><span><b>[{{ citationIndex + 1 }}] {{ citation.textbook_title }}</b><small>{{ citation.chapter_title || '教材正文' }}<template v-if="citation.page"> · 第 {{ citation.page }} 页</template><template v-else-if="citation.locator?.kind === 'slide'"> · 幻灯片 {{ citation.locator.unit_id }}</template></small><em>{{ citation.content }}</em></span></button></div></div>
           </article>
           <article v-if="sending" class="message assistant"><span class="message-avatar">知</span><div class="message-body typing"><i></i><i></i><i></i><span>正在检索教材并组织回答</span></div></article>
         </div>
         <footer class="composer"><el-input v-model="question" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }" maxlength="2000" show-word-limit placeholder="请输入与教材内容相关的问题…" @keydown.enter.exact.prevent="send()" /><button type="button" :disabled="!question.trim() || sending" @click="send()"><el-icon><Promotion /></el-icon></button><p>AI 可能出错，请以引用的教材原文为准。</p></footer>
       </section>
       <aside class="rag-aside">
+        <section class="surface-card guide-card"><h2>本次问答方式</h2><label style="display:flex;gap:8px;line-height:1.8;font-size:14px"><input data-test="use-ai" v-model="useAI" type="checkbox" :disabled="sending || !textbookId || !ai?.qa_enabled || !ai?.key_configured">使用 AI 解释，同意发送问题和相关片段</label><p style="font-size:13px;line-height:1.8">{{ useAI ? '会发送至：' + ai?.base_url + '，模型：' + ai?.model + '。最多 5 段，每段 500 字，可能产生费用。' : '当前只查本地资料，不发送教材。' }}</p><el-button @click="router.push('/settings')">设置 AI 接口</el-button></section>
         <section class="surface-card guide-card"><p class="eyebrow">提问指南</p><h2>如何得到更好的回答</h2><ul><li><span>01</span><p><strong>限定教材范围</strong><small>选择具体教材，减少跨资料干扰。</small></p></li><li><span>02</span><p><strong>描述具体问题</strong><small>带上概念、章节或题目条件。</small></p></li><li><span>03</span><p><strong>核对原文引用</strong><small>点击式卡片会显示相关教材片段。</small></p></li></ul></section>
         <section class="privacy-card"><el-icon><Document /></el-icon><div><strong>资料安全</strong><p>只查找你自己的课本。若配置了在线 AI，会把相关课本片段发送给该服务。</p></div></section>
       </aside>

@@ -211,8 +211,8 @@ class CloseCoordinator:
                 if not self._ask("本地服务已中断", "可能有记录尚未保存。要关闭并稍后重新启动吗？"):
                     return
             if active and not self._ask(
-                "教材还在整理",
-                "要取消整理并退出吗？选择取消可留在软件中继续等待。已保存的资料仍保留。",
+                "资料任务还在进行",
+                "教材正在整理或补题，要停止并退出吗？选择取消可继续等待。已保存资料仍保留；已发出的 AI 请求可能计费。",
             ):
                 return
             if not self._host.stop().exited:

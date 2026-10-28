@@ -107,8 +107,12 @@ def evidence_units(db, book, chapter_id=None):
             raise ValueError('所选章节不属于这本教材')
         selected_ids = chapter_scope_ids(db, chapter)
     unsafe = set()
+    bound_chapters = set()
     for chunk in db.scalars(select(DocumentChunk).where(DocumentChunk.textbook_id == book.id)):
         metadata = chunk.metadata_json or {}
+        binding = metadata.get('locator') or {}
+        if binding.get('source_id') == rendition.source_id and binding.get('rendition_revision') == rendition.revision:
+            bound_chapters.add(chunk.chapter_id)
         if metadata.get('math_review_required'):
             locator = metadata.get('locator') or {}
             unsafe.add((locator.get('kind', 'page'), str(locator.get('unit_id', chunk.page_number))))
@@ -116,6 +120,8 @@ def evidence_units(db, book, chapter_id=None):
     grouped = {}
     for block in data['blocks']:
         chapter = block.get('chapter_id')
+        if chapter is not None and (chapter not in titles or (rendition.parser_version != 'legacy-preserved-1' and chapter not in bound_chapters)):
+            continue
         if selected_ids is not None and chapter not in selected_ids:
             continue
         if block['kind'] in {'heading', 'image', 'unsupported'} or not block.get('text', '').strip():

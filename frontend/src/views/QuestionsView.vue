@@ -8,6 +8,8 @@ import QuestionTypeTag from '../components/QuestionTypeTag.vue'
 import StatePanel from '../components/StatePanel.vue'
 import { questionApi, textbookApi, type Question, type QuestionPayload, type QuestionType, type Textbook } from '../api'
 import { getApiErrorMessage } from '../api/http'
+import { useRouter } from 'vue-router'
+const router = useRouter()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -150,7 +152,7 @@ onMounted(async () => {
 <template>
   <div>
     <PageHeader eyebrow="My Question Bank" title="我的题库" description="整理教材习题与自己添加的题目，随时编辑并决定哪些题用于练习。">
-      <template #actions><el-button type="primary" :icon="CirclePlus" @click="openCreate">添加题目</el-button></template>
+      <template #actions><el-button @click="router.push({ path: '/practice/fill', query: { textbook: filters.textbook_id ? String(filters.textbook_id) : undefined } })">根据教材补题</el-button><el-button type="primary" :icon="CirclePlus" @click="openCreate">添加题目</el-button></template>
     </PageHeader>
     <section class="surface-card filter-bar">
       <el-input v-model="filters.keyword" class="search-input" clearable placeholder="搜索题干" :prefix-icon="Search" @keyup.enter="load" @clear="load" />

@@ -27,7 +27,7 @@ const questionTypes: Array<{ value: QuestionType; label: string }> = [
   { value: 'fill_blank', label: '填空题' },
   { value: 'short_answer', label: '简答题' },
 ]
-const form = reactive<ExamGeneratePayload>({ question_count: 5, duration_minutes: 20, mode: 'adaptive', auto_fill: true, question_types: questionTypes.map(type => type.value) })
+const form = reactive<ExamGeneratePayload>({ question_count: 5, duration_minutes: 20, mode: 'adaptive', auto_fill: false, question_types: questionTypes.map(type => type.value) })
 function flattenChapters(nodes: Chapter[]): Chapter[] {
   return nodes.flatMap(node => [node, ...flattenChapters(node.children || [])])
 }
@@ -129,7 +129,8 @@ watch(() => route.query, loadBooks)
         <el-form-item label="做几道题？"><el-radio-group v-model="form.question_count"><el-radio-button :value="5">5 道</el-radio-button><el-radio-button :value="10">10 道</el-radio-button><el-radio-button :value="15">15 道</el-radio-button></el-radio-group></el-form-item>
         <el-form-item label="练哪些题型？"><el-checkbox-group v-model="form.question_types"><el-checkbox v-for="type in questionTypes" :key="type.value" :value="type.value">{{ type.label }}</el-checkbox></el-checkbox-group></el-form-item>
         <p v-if="!form.question_types?.length" role="alert" class="practice-note">请至少选择一种题型。</p>
-        <p class="practice-note">默认混合五种题型，也可以选择想练的题型。优先使用已有题目，不足时会为支持的数学内容编写练习题，并提供参考答案和讲解。编写题不是课本原题；简答题提交后需要自行核对，不计入客观题得分率。范围或题型暂不支持时会提示你。</p>
+        <p class="practice-note">从你已确认的题库中选择题目。题目不够时，可以先根据教材补题、核对后保存。支持五种题型；简答题需要自己核对，不计入客观题得分率。</p>
+        <el-button @click="router.push({ path: '/practice/fill', query: { textbook: String(form.textbook_id), chapter: chapterId ? String(chapterId) : undefined } })">根据教材补充题目</el-button>
         <el-button text @click="advanced = !advanced">{{ advanced ? '收起设置' : '更多设置（可不改）' }}</el-button>
         <div v-if="advanced">
           <el-form-item label="练习方式"><el-radio-group v-model="form.mode"><el-radio value="adaptive">多练不熟的内容</el-radio><el-radio value="random">随机练习</el-radio></el-radio-group></el-form-item>

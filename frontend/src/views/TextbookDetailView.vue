@@ -318,7 +318,7 @@ onMounted(() => { void openReader() })
   <div v-loading="loading">
     <button class="back-link" type="button" @click="router.push('/textbooks')"><el-icon><ArrowLeft /></el-icon>返回我的课本</button>
     <PageHeader :eyebrow="structure?.textbook.subject || '我的课本'" :title="structure?.textbook.title || '课本内容'" :description="[structure?.textbook.grade, structure?.textbook.edition].filter(Boolean).join(' · ') || '点击目录，开始学习'">
-      <template #actions><el-button :icon="ChatDotRound" @click="router.push({ path: '/rag', query: { textbook: route.params.id } })">问一问</el-button><el-button type="primary" :icon="EditPen" @click="router.push({ path: '/exam/generate', query: { textbook: route.params.id, chapter: selectedChapter?.id } })">练一练</el-button></template>
+      <template #actions><el-button @click="router.push({ path: '/practice/fill', query: { textbook: route.params.id, chapter: selectedChapter?.id } })">补充练习题</el-button><el-button :icon="ChatDotRound" @click="router.push({ path: '/rag', query: { textbook: route.params.id } })">问一问</el-button><el-button type="primary" :icon="EditPen" @click="router.push({ path: '/exam/generate', query: { textbook: route.params.id, chapter: selectedChapter?.id } })">练一练</el-button></template>
     </PageHeader>
     <el-alert v-if="error" class="error-banner" type="warning" :closable="false" show-icon title="课本暂时没有加载出来" :description="error" />
 

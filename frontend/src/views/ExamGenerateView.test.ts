@@ -42,7 +42,7 @@ describe('学生开始练习', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(api.generate).toHaveBeenCalledWith(expect.objectContaining({
-      textbook_id: 2, chapter_ids: [8], question_count: 5, auto_fill: true,
+      textbook_id: 2, chapter_ids: [8], question_count: 5, auto_fill: false,
     }))
     expect(api.push).toHaveBeenCalledWith('/exam/42/take')
   })

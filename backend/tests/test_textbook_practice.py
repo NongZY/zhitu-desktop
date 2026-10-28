@@ -147,6 +147,26 @@ def test_deleted_chapter_and_other_owner_cannot_save_candidates(client, material
     assert replacement.status_code == 201
     assert client.post(f"/api/v1/practice/jobs/{job['id']}/confirm", headers=headers,
                        json={'candidate_ids': [job['candidates'][0]['id']]}).status_code == 409
+    _, fresh = start(client, headers, book, chapter_id=replacement.json()['id'])
+    assert not fresh['candidates'], 'Old body must not be attached to a reused chapter ID'
+
+
+def test_deleting_chapter_keeps_saved_questions_and_relations_valid(client, material):
+    from app.database import SessionLocal
+    from sqlalchemy import text
+    headers, book = material
+    _, job = start(client, headers, book)
+    chapter = job['candidates'][0]['chapter_id']
+    point = client.post(f'/api/v1/chapters/{chapter}/knowledge-points', headers=headers,
+                        json={'name': '用于删除验证的知识点'}).json()
+    q = client.post('/api/v1/questions', headers=headers, json={'textbook_id': book,
+        'chapter_id': chapter, 'knowledge_point_id': point['id'], 'question_type': 'true_false',
+        'stem': '距离不小于零', 'correct_answer': True, 'status': 'approved', 'difficulty': 1}).json()
+    assert client.delete(f'/api/v1/chapters/{chapter}', headers=headers).status_code == 204
+    question = client.get(f"/api/v1/questions/{q['id']}", headers=headers).json()
+    assert question['chapter_id'] is None and question['knowledge_point_id'] is None
+    with SessionLocal() as db:
+        assert db.execute(text('PRAGMA foreign_key_check')).fetchall() == []
 
 
 def test_ai_partial_invalid_sources_and_error_stop_later_paid_batches(client, material, tmp_path):
@@ -207,7 +227,7 @@ def test_cancellation_stops_pending_ai_and_preserves_candidates(client, material
     from app.models import Textbook, PracticeJob
     from app.services.ai_connection import AIConnection
     from app.services.practice_content import JobCreate
-    from app.services.textbook_practice import create_job, process_job, cancel_job, job_read
+    from app.services.textbook_practice import create_job, process_job, cancel_job, job_read, active_practice_count
     _, book_id = material
 
     async def scenario():
@@ -225,10 +245,12 @@ def test_cancellation_stops_pending_ai_and_preserves_candidates(client, material
                                  count=1, question_types=['true_false']))
             job_id = job.id
         task = asyncio.create_task(process_job(job_id, connection))
-        await entered.wait()
+        await asyncio.wait_for(entered.wait(), 3)
+        assert active_practice_count() == 1
         with SessionLocal() as db:
             cancel_job(db, db.get(PracticeJob, job_id))
         await asyncio.wait_for(task, 1)
+        assert active_practice_count() == 0
         with SessionLocal() as db:
             result = job_read(db, db.get(PracticeJob, job_id))
             assert result['status'] == 'cancelled' and not result['candidates']

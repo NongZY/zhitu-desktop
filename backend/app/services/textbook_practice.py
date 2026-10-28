@@ -6,7 +6,7 @@ import threading
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal
@@ -18,6 +18,11 @@ from app.services.practice_content import (CandidateContent, JobCreate, evidence
 
 _calls = {}
 _confirm_lock = threading.Lock()
+
+
+def active_practice_count():
+    with SessionLocal() as db:
+        return db.scalar(select(func.count()).select_from(PracticeJob).where(PracticeJob.status.in_(['queued', 'running']))) or 0
 
 
 def owned_job(db, job_id, owner):
@@ -43,7 +48,7 @@ def candidate_read(row):
 
 def job_read(db, job):
     candidates = list(db.scalars(select(PracticeCandidate).where(PracticeCandidate.job_id == job.id)))
-    units = [{key: unit[key] for key in ('chapter_id', 'title', 'status', 'message', 'body_blocks')}
+    units = [{key: unit[key] for key in ('chapter_id', 'title', 'status', 'message', 'body_blocks', 'evidence')}
              for unit in job.units]
     return dict(id=job.id, textbook_id=job.textbook_id, status=job.status, message=job.message,
                 parameters=job.parameters, units=units, source_changed=not is_current(db, job),

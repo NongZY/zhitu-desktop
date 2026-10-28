@@ -336,6 +336,7 @@ export interface WrongQuestion {
 }
 
 export interface AnswerEvidence {
+  snapshot_verified?: boolean
   question_id: string | number
   stem: string
   question_type: QuestionType
@@ -411,6 +412,7 @@ export interface Citation {
 }
 
 export interface RagAskPayload {
+  use_ai?: boolean
   question: string
   textbook_id?: string | number
   chapter_id?: string | number
@@ -418,6 +420,9 @@ export interface RagAskPayload {
 }
 
 export interface RagAnswer {
+  mode?: 'local' | 'ai'
+  ai_status?: string
+  notice?: string
   answer: string
   citations: Citation[]
   conversation_id?: string

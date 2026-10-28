@@ -7,10 +7,18 @@ from pathlib import Path
 import pytest
 import test_desktop_flow as flow
 import test_desktop_documents as documents
+import test_desktop_core as core
 from desktop_helpers import RunningDesktop
 
 BUNDLE = os.environ.get("ZHITU_TEST_BUNDLE")
 pytestmark = pytest.mark.skipif(not BUNDLE, reason="packaged directory not explicitly supplied")
+
+
+def test_packaged_ai_fill_exam_backup_restore(tmp_path, monkeypatch):
+    folder = Path(BUNDLE)
+    monkeypatch.setattr(core, 'RunningDesktop', partial(RunningDesktop,
+        executable=folder / 'ZhiTuService.exe', static=folder / '_internal' / 'frontend' / 'dist'))
+    core.test_desktop_ai_local_fill_exam_and_backup_restore(tmp_path)
 
 
 def test_packaged_document_formats_and_restart(tmp_path, monkeypatch):

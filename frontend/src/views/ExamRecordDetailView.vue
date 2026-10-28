@@ -67,6 +67,7 @@ onUnmounted(() => { request++ })
         <article v-for="(item, index) in record.details" :key="item.question_id" class="surface-card answer-card">
           <div class="answer-heading"><span>第 {{ index + 1 }} 题</span><QuestionTypeTag :type="item.question_type" /><el-tag :type="item.is_correct === null ? 'warning' : item.is_correct ? 'success' : 'danger'">{{ item.is_correct === null ? '自行检查' : item.is_correct ? '正确' : '错误' }}</el-tag><span class="question-score">{{ item.is_correct === null ? '未自动评分' : `${item.score} / ${item.max_score} 分` }}</span></div>
           <h2><MathContent :text="item.stem" /></h2>
+          <p v-if="item.snapshot_verified === false" role="note">这是一条旧版记录，未保存当时的题目副本。下方题目与答案来自当前题库，原有得分仍保留。</p>
           <ul v-if="optionsOf(item.options).length" class="options"><li v-for="option in optionsOf(item.options)" :key="option.key"><b>{{ option.key }}.</b> <MathContent :text="option.text" /></li></ul>
           <div class="answer-comparison"><section><h3>我的答案</h3><MathContent :text="answerText(item.user_answer, item.question_type)" /></section><section><h3>参考答案</h3><MathContent :text="item.correct_answer == null ? '暂无参考答案' : answerText(item.correct_answer, item.question_type)" /></section></div>
           <section class="explanation"><h3>解析</h3><MathContent :text="item.explanation || '暂无解析'" /></section>

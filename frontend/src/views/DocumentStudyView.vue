@@ -111,7 +111,7 @@ onUnmounted(() => { disposed = true; generation++; searchGeneration++; unregiste
 <template>
   <div>
     <PageHeader :title="data.original_name" description="资料已保存在本机。按目录阅读，或查找你需要的内容。">
-      <template #actions><el-button @click="router.push({ path: '/rag', query: { textbook: String(data.textbook_id), chapter: chapterId ? String(chapterId) : undefined } })">问一问</el-button><el-button @click="router.push({ path: '/exam/generate', query: { textbook: String(data.textbook_id) } })">做练习</el-button></template>
+      <template #actions><el-button v-if="!historical" @click="router.push({ path: '/practice/fill', query: { textbook: String(data.textbook_id), chapter: chapterId ? String(chapterId) : undefined } })">补充练习题</el-button><el-button @click="router.push({ path: '/rag', query: { textbook: String(data.textbook_id), chapter: chapterId ? String(chapterId) : undefined } })">问一问</el-button><el-button @click="router.push({ path: '/exam/generate', query: { textbook: String(data.textbook_id) } })">做练习</el-button></template>
     </PageHeader>
     <el-alert v-if="notice" :title="notice" type="info" :closable="false" />
     <p v-if="historical" role="status">你正在查看引用的旧版本，不会更改当前教材的阅读位置。<el-button @click="router.push(`/textbooks/${data.textbook_id}`)">返回当前教材</el-button></p>

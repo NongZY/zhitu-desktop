@@ -12,6 +12,8 @@ interface ImportMeta {
 interface Window {
   pywebview?: { api: {
     get_context: () => Promise<unknown>
+    export_backup?: (id: string) => Promise<{ saved: boolean }>
+    open_data_dir?: () => Promise<{ opened: boolean }>
     respond_close: (requestId: string, decision: 'ready' | 'stay' | 'discard' | 'pending') => Promise<void>
   } }
 }
