@@ -24,6 +24,19 @@ def normalize_answer(value: object) -> object:
 def grade_objective(question: Question, answer: object) -> bool | None:
     if question.question_type == "short_answer":
         return None
+    if question.question_type == "fill_blank":
+        # Blank positions are ordered. A single blank may be stored as a string
+        # or a one-item list; the learner enters multiple blanks one per line.
+        def blanks(value):
+            if isinstance(value, str):
+                value = value.strip().splitlines()
+            if not isinstance(value, list) or not value:
+                return None
+            if not all(isinstance(item, str) and item.strip() for item in value):
+                return None
+            return [normalize_answer(item) for item in value]
+        submitted, expected = blanks(answer), blanks(question.correct_answer)
+        return submitted is not None and expected is not None and submitted == expected
     if normalize_answer(answer) == normalize_answer(question.correct_answer):
         return True
     if question.question_type not in {"single_choice", "multiple_choice"}:

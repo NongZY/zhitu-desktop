@@ -150,7 +150,7 @@ onBeforeUnmount(() => { if (timer) window.clearInterval(timer) })
               <el-checkbox v-for="option in optionsOf(currentQuestion.options)" :key="option.key" :value="option.key" border><strong>{{ option.key }}</strong><span><MathContent :text="option.text" /></span></el-checkbox>
             </el-checkbox-group>
             <el-radio-group v-else-if="currentQuestion.type === 'true_false'" v-model="answers[answerKey(currentQuestion.id)]" class="judge-list"><el-radio :value="true" border>正确</el-radio><el-radio :value="false" border>错误</el-radio></el-radio-group>
-            <el-input v-else-if="currentQuestion.type === 'fill_blank'" v-model="answers[answerKey(currentQuestion.id)] as string" size="large" placeholder="请输入答案" />
+            <div v-else-if="currentQuestion.type === 'fill_blank'"><p>按题目中的顺序作答，每空一行。</p><el-input v-model="answers[answerKey(currentQuestion.id)] as string" type="textarea" :rows="3" placeholder="请输入答案，每空一行" /></div>
             <el-input v-else v-model="answers[answerKey(currentQuestion.id)] as string" type="textarea" :rows="8" placeholder="请写出解题过程与答案，提交后可结合参考答案自行核对" />
           </div>
           <div class="question-nav"><el-button :disabled="currentIndex === 0" @click="currentIndex--"><el-icon><ArrowLeft /></el-icon>上一题</el-button><el-button v-if="currentIndex < paper.questions.length - 1" type="primary" @click="currentIndex++">下一题</el-button><el-button v-else type="success" @click="submit(false)">完成练习</el-button></div>

@@ -154,6 +154,36 @@ def test_changed_staged_restore_falls_back_to_current_space(space):
     assert not m.status(root)['pending']
 
 
+def test_backup_rejects_original_changed_since_import(space):
+    from app.desktop import maintenance as m
+    root, _, original = space
+    original.write_bytes(b'x' * original.stat().st_size)
+    with pytest.raises(ValueError, match='原文件.*不一致'):
+        m.create_backup(root, root)
+    assert not list((root / 'backups').glob('*.zip'))
+    assert m.resolve_active_space(root) == root
+
+
+def test_restore_rejects_original_with_recomputed_manifest_but_wrong_source_revision(space):
+    from app.desktop import maintenance as m
+    root, _, original = space
+    backup = m.create_backup(root, root)
+    with zipfile.ZipFile(root / 'backups' / (backup['id'] + '.zip')) as archive:
+        items = {name: archive.read(name) for name in archive.namelist()}
+    name = next(name for name in items if name.startswith('uploads/'))
+    items[name] = b'x' * len(items[name])
+    manifest = json.loads(items['manifest.json'])
+    manifest['files'][name] = {'sha256': hashlib.sha256(items[name]).hexdigest(), 'size': len(items[name])}
+    items['manifest.json'] = json.dumps(manifest).encode()
+    changed = root / 'changed-original.zip'
+    with zipfile.ZipFile(changed, 'w') as archive:
+        for name, content in items.items():
+            archive.writestr(name, content)
+    with pytest.raises(ValueError, match='原文件.*不一致'):
+        m.stage_restore(root, changed)
+    assert m.resolve_active_space(root) == root and original.is_file()
+
+
 def test_upgrade_keeps_database_snapshot_before_schema_change(space):
     from app.desktop import maintenance as m
     root, book, _ = space

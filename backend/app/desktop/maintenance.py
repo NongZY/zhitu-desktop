@@ -130,6 +130,13 @@ def _original(path, space):
     return resolved
 
 
+def validate_source_files(db, files):
+    """The archive manifest must also agree with the imported source identity."""
+    for name, revision, size in db.execute('SELECT managed_file,source_revision,byte_size FROM document_sources'):
+        if files.get(name) != {'sha256': revision, 'size': size}:
+            raise ValueError('教材原文件与导入时的内容不一致，请保留原资料并重新导入正确文件')
+
+
 def create_backup(root, space):
     with LOCK:
         root, space = root.resolve(), space.resolve()
@@ -152,8 +159,14 @@ def create_backup(root, space):
                             raise ValueError('教材文件格式不受支持')
                         # Identity includes the original path: equal-content different imports remain distinct.
                         name = 'uploads/' + hashlib.sha256(str(path).encode()).hexdigest() + suffix
-                        files[name] = path
+                        if name not in files:
+                            copied = temp / name
+                            copied.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copyfile(path, copied)
+                            files[name] = copied
                         db.execute(f'UPDATE {table} SET {column}=? WHERE {column}=?', (name, value))
+                original_info = {name: file_info(path) for name, path in files.items()}
+                validate_source_files(db, original_info)
             files.update({'learning.db': temp / 'learning.db', 'workspace.json': temp / 'workspace.json'})
             info = {name: file_info(path) for name, path in files.items()}
             if len(files) > MAX_MEMBERS - 1 or sum(v['size'] for v in info.values()) > MAX_EXPANDED:
@@ -217,6 +230,7 @@ def stage_restore(root, archive_path):
                         raise ValueError('备份文件已损坏，原资料没有改动')
             counts = validate_database(folder)
             with _db(folder / 'learning.db') as db:
+                validate_source_files(db, manifest['files'])
                 for table, column in PATH_COLUMNS:
                     for (value,) in db.execute(f'SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL').fetchall():
                         if not isinstance(value, str) or not value.startswith('uploads/') or value not in manifest['files']:

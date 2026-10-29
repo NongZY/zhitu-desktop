@@ -97,6 +97,74 @@ def test_all_chapters_include_tail_after_one_thousand_blocks(client, material):
     assert job['status'] == 'partial' and job['candidates']
 
 
+@pytest.mark.parametrize('expected,submitted,correct', [
+    (['42'], '42', True), (['2', '-2'], ' 2 \n -2 ', True),
+    (['2', '-2'], ['2', '-2'], True), (['2', '-2'], ['-2', '2'], False),
+    (['2', '-2'], '-2\n2', False), (['2', '-2'], '2\n\n-2', False),
+])
+def test_edited_fill_candidate_grades_in_blank_order(client, material, expected, submitted, correct):
+    headers, book = material
+    _, job = start(client, headers, book, count=1, question_types=['fill_blank'])
+    row = job['candidates'][0]
+    response = client.patch(f"/api/v1/practice/candidates/{row['id']}", headers=headers,
+        json={**row['question'], 'correct_answer': expected})
+    assert response.status_code == 200
+    saved = client.post(f"/api/v1/practice/jobs/{job['id']}/confirm", headers=headers,
+                        json={'candidate_ids': [row['id']]}).json()['question_ids'][0]
+    paper = client.post('/api/v1/exams/generate', headers=headers, json={
+        'textbook_id': book, 'question_count': 1, 'question_types': ['fill_blank'], 'auto_fill': False}).json()
+    result = client.post(f"/api/v1/exams/{paper['id']}/submit", headers=headers,
+        json={'answers': [{'question_id': saved, 'answer': submitted}]}).json()
+    assert result['details'][0]['is_correct'] is correct
+
+
+def test_duplicate_ai_candidates_remain_partial_and_retry_counts_retained_rows(client, material, tmp_path):
+    import asyncio
+    import copy
+    import json
+    import httpx
+    from app.database import SessionLocal
+    from app.models import Textbook, PracticeJob
+    from app.services.ai_connection import AIConnection
+    from app.services.practice_content import JobCreate
+    from app.services.textbook_practice import create_job, process_job, job_read
+
+    _, book_id = material
+    first = dict(question_type='true_false', stem='绝对值表示到原点的距离。', options=None,
+                 correct_answer=True, explanation='根据教材定义。', difficulty=1, evidence_ids=['e1'])
+    second = {**first, 'stem': '绝对值不可能是负数。'}
+    responses = [[first, first], [first, second]]
+    def respond(request):
+        return httpx.Response(200, json={'choices': [{'message': {'content': json.dumps({'questions': responses.pop(0)})}}]})
+    connection = AIConnection(tmp_path / 'duplicate-ai', transport=httpx.MockTransport(respond))
+    connection.save(dict(base_url='https://ai.example/v1', model='test', api_key='fake',
+                         qa_enabled=False, practice_enabled=True, privacy_ack=True))
+    with SessionLocal() as db:
+        book = db.get(Textbook, book_id)
+        job, _ = create_job(db, book, book.owner_id, JobCreate(request_id=str(uuid4()), mode='ai',
+            count=2, question_types=['true_false'], external_consent=True))
+        job_id = job.id
+    asyncio.run(process_job(job_id, connection))
+    with SessionLocal() as db:
+        job = db.get(PracticeJob, job_id)
+        result = job_read(db, job)
+        assert result['status'] == 'partial'
+        assert result['units'][0]['status'] == 'partial'
+        assert '1 道' in result['units'][0]['message']
+        assert len(result['candidates']) == 1
+        job.status = 'queued'
+        units = copy.deepcopy(job.units)
+        units[0]['status'] = 'queued'
+        job.units = units
+        db.commit()
+    asyncio.run(process_job(job_id, connection))
+    with SessionLocal() as db:
+        result = job_read(db, db.get(PracticeJob, job_id))
+        assert result['status'] == 'completed'
+        assert '2 道' in result['units'][0]['message']
+        assert len(result['candidates']) == 2
+
+
 def test_only_explicit_original_question_answers_are_extracted(client, material):
     headers, book = material
     content = '# 科学\n题目：水在标准大气压下的沸点是多少？\n答案：100℃\n解析：这是标准大气压下的数值。\n题目：没有给答案的题目？'

@@ -146,22 +146,25 @@ async def process_job(job_id, connection=None):
                     job.status, job.message = 'obsolete', '教材已更新，本次返回结果没有写入，请按新内容重新补题。'
                     db.commit()
                     return
-                existing = set(db.scalars(select(PracticeCandidate.fingerprint).where(PracticeCandidate.job_id == job_id)))
+                retained = list(db.scalars(select(PracticeCandidate).where(PracticeCandidate.job_id == job_id)))
+                existing = {row.fingerprint for row in retained}
+                unit_count = sum(row.provenance.get('unit_index') == index for row in retained)
                 method = {'rules': 'textbook_rules', 'extract': 'textbook_original', 'ai': 'textbook_ai'}[mode]
                 for content, evidence in rows:
                     digest = fingerprint(content)
-                    if digest in existing:
+                    if digest in existing or unit_count >= count:
                         continue
                     existing.add(digest)
+                    unit_count += 1
                     db.add(PracticeCandidate(id=str(uuid4()), job_id=job_id, chapter_id=unit['chapter_id'],
                         content=content, evidence=evidence, fingerprint=digest,
                         provenance=dict(method=method, model=model, version='textbook-fill-1',
                                         generated_at=utcnow().isoformat(), unit_index=index,
                                         rendition_revision=job.rendition_revision)))
                 units = copy.deepcopy(job.units)
-                units[index]['status'] = ('completed' if len(rows) >= count and not rejected else 'partial') if rows else 'failed'
-                units[index]['message'] = (f'得到 {len(rows)} 道候选，请核对后保存。' +
-                    (f'跳过 {rejected} 道无效结果。' if rejected else '')) if rows else failure
+                units[index]['status'] = ('completed' if unit_count >= count and not rejected else 'partial') if unit_count else 'failed'
+                units[index]['message'] = (f'得到 {unit_count} 道不重复候选，请核对后保存。' +
+                    (f'跳过 {rejected} 道无效结果。' if rejected else '')) if unit_count else failure
                 job.units = units
                 job.message = f'已处理 {index + 1}/{count_units} 个章节'
                 db.commit()
