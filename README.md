@@ -1,10 +1,10 @@
 # 智能自适应学习系统
 
-> 本目录是 **Windows 应用版的独立项目**。最新安装包为 `dist\installers\ZhiTu-0.2.0-test.2-Setup.exe`，支持 PDF、DOCX、PPTX、TXT、MD 本地导入、阅读和查找。先关闭旧版，再双击安装包更新；不会自动把已安装的 `test.1` 换成新版。安装包位置、范围和验证记录见 [多格式测试版说明](docs/DESKTOP_DOCUMENTS_D2.md)，旧版记录见 [D1 测试版说明](docs/DESKTOP_TEST_BUILD.md)。原网页版继续保留在 `E:\项目\学习系统`，不受本目录改动影响。
+> 本目录是 **Windows 应用版的独立项目**。最新安装包为 `dist\installers\ZhiTu-0.2.0-test.3-Setup.exe`，支持 PDF、DOCX、PPTX、TXT、MD 本地学习，新增可选 AI 问答、教材正文补题、备份和恢复。先关闭旧版，再双击安装包更新；已安装程序不会自动更新。安装包位置、范围和验证记录见 [D3 测试版说明](docs/DESKTOP_CORE_D3.md)，历史记录见 [D2 说明](docs/DESKTOP_DOCUMENTS_D2.md) 和 [D1 说明](docs/DESKTOP_TEST_BUILD.md)。原网页版继续保留在 `E:\项目\学习系统`，不受本目录改动影响。
 >
-> 应用版开发启动：在 PyCharm 使用应用版 `backend\.venv\Scripts\python.exe`，运行根目录 `run_desktop.py`。无需 Docker，不打开浏览器。准备步骤、数据位置和验收边界见 [桌面 D1 说明](docs/DESKTOP_D1.md)、[版本来源](docs/VERSION_LINEAGE.md) 和 [整体设计](docs/superpowers/specs/2026-10-20-windows-local-app-design.md)。可选 AI 设置、教材补题和备份恢复仍待后续批次。
+> 应用版开发启动：在 PyCharm 使用应用版 `backend\.venv\Scripts\python.exe`，运行根目录 `run_desktop.py`。无需 Docker，不打开浏览器。准备步骤、数据位置和验收边界见 [桌面 D1 说明](docs/DESKTOP_D1.md)、[版本来源](docs/VERSION_LINEAGE.md) 和 [整体设计](docs/superpowers/specs/2026-10-20-windows-local-app-design.md)。AI 默认关闭，可在软件设置中配置自己的兼容接口。
 
-两端已共同纳入[教材内容驱动的补题方案](docs/superpowers/specs/2026-10-20-textbook-question-fill-design.md)：根据导入教材的正文与知识要点生成配套候选，确认后保存到对应教材；不以无教材题库或自由主题出题为目标。此项尚未实现，不能把远程网页误称为断网也能使用。
+两端已共同纳入[教材内容驱动的补题方案](docs/superpowers/specs/2026-10-20-textbook-question-fill-design.md)：根据导入教材的正文与知识要点生成配套候选，确认后保存到对应教材。桌面 test.3 已实现有限数学规则、明确原题提取及可选 AI 补题，支持五种题型；本批没有将实现同步到网页版。离线规则不等于全学科离线 AI。
 
 ## 以下为网页版基线参考（不是应用版启动步骤）
 

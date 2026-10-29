@@ -33,41 +33,41 @@
 **Files:** create `backend/app/desktop/secrets.py`, `backend/app/services/ai_connection.py`, `backend/app/api/desktop_settings.py`, `backend/tests/test_ai_connection.py`; modify `api/rag.py`, `schemas.py`, `main.py`.
 **Interfaces:** `AIConnection(root: Path, transport=None)` exposes `public()`, `save(payload: dict)`, `async complete(purpose, messages, *, consent=False) -> dict(status, text, model, notice)`. `connection_for(root)` caches live cancellation state. Desktop GET/PUT `/settings/ai`, POST `/settings/ai/test`; test requires explicit cost acknowledgment. Q&A has an explicit `use_ai` request flag and returns mode/status/notice while retaining local citations.
 
-- [ ] Write tests: default-off no network; DPAPI round trip/secret-free reads; per-use permission and test consent; status 401/429/quota/timeout/malformed; no redirects; disable cancels pending call.
-- [ ] Run `python -m pytest tests/test_ai_connection.py -q -o addopts=`; expect missing service failures.
-- [ ] Implement bounded OpenAI-compatible Chat Completions, atomic config, protected key storage and safe status mapping. Retrieve only up to 5 snippets/500 chars for AI; unresolved formulas stay local.
-- [ ] Run tests and desktop isolation regressions; expect pass. Commit.
+- [x] Write tests: default-off no network; DPAPI round trip/secret-free reads; per-use permission and test consent; status 401/429/quota/timeout/malformed; no redirects; disable cancels pending call.
+- [x] Run `python -m pytest tests/test_ai_connection.py -q -o addopts=`; expect missing service failures.
+- [x] Implement bounded OpenAI-compatible Chat Completions, atomic config, protected key storage and safe status mapping. Retrieve only up to 5 snippets/500 chars for AI; unresolved formulas stay local.
+- [x] Run tests and desktop isolation regressions; expect pass. Commit.
 
 ### Task 2: Evidence-bound textbook practice and history
 
 **Files:** new `services/textbook_practice.py`, `api/textbook_practice.py`, `services/question_snapshots.py`, `tests/test_textbook_practice.py`; modify models/schema upgrades/questions/exams/learning/basic_practice.
 **Interfaces:** GET `/textbooks/{id}/practice/coverage`; POST `/textbooks/{id}/practice/jobs` takes stable request_id, chapter_id, mode rules/ai/extract, count per chapter, question_types and external-call acknowledgment. GET job, POST cancel, PATCH candidate, POST confirm with candidate IDs. `PracticeJob` binds owner/book/source/rendition and immutable evidence units; `PracticeCandidate` stores validated typed content, evidence/provenance, saved question ID. `ExamPaperQuestion.snapshot` freezes new paper contents and grading.
 
-- [ ] Write tests for source-based rules on body-only materials, title-only refusal, five answer structures, reference ownership, unconfirmed exclusion, edit/confirm idempotency, stale source/chapter rejection, chapter batching beyond 1000 chunks and cancellation/partial output.
-- [ ] Run focused tests; expect missing interfaces/behavior failures.
-- [ ] Implement bounded per-chapter candidates, limited deterministic templates, AI structured JSON validation and finite explicit-answer extraction; no answer guessing. Persist task/candidate states, startup interruption recovery, no automatic paid retry.
-- [ ] Snapshot newly created exams and use snapshots for grading/results; prevent deleting questions required by existing papers. Test edits cannot rewrite old scores/answers.
-- [ ] Run practice/history/migration regressions and commit.
+- [x] Write tests for source-based rules on body-only materials, title-only refusal, five answer structures, reference ownership, unconfirmed exclusion, edit/confirm idempotency, stale source/chapter rejection, chapter batching beyond 1000 chunks and cancellation/partial output.
+- [x] Run focused tests; expect missing interfaces/behavior failures.
+- [x] Implement bounded per-chapter candidates, limited deterministic templates, AI structured JSON validation and finite explicit-answer extraction; no answer guessing. Persist task/candidate states, startup interruption recovery, no automatic paid retry.
+- [x] Snapshot newly created exams and use snapshots for grading/results; prevent deleting questions required by existing papers. Test edits cannot rewrite old scores/answers.
+- [x] Run practice/history/migration regressions and commit.
 
 ### Task 3: Consistent backup and staged restore
 
 **Files:** new `desktop/maintenance.py`, `api/desktop_maintenance.py`, `tests/test_desktop_maintenance.py`; modify desktop profile/service/security/window as needed.
 **Interfaces:** POST `/maintenance/backups`, GET download by server ID; POST `/maintenance/restores` accepts archive, returns verified counts/token; POST confirm stages next-start activation, DELETE cancels pending activation. Root owns a validated active-space pointer; `resolve_active_space(root)` runs before profile/config initialization. Settings exposes fixed open-data-folder action, never arbitrary path execution.
 
-- [ ] Write WAL-inclusive round-trip, omitted secrets, all source paths rebased, tamper/traversal/duplicate/oversize rejection, failed restore leaves original and startup activation tests.
-- [ ] Run tests; expect missing maintenance service.
-- [ ] Use SQLite backup API and immutable originals; reject busy imports/generation. Validate manifest/database/schema/owner/paths and stage all files. Confirm switches at next startup only; block further writes while scheduled. Preserve previous root and pointer for rollback.
-- [ ] Run maintenance/startup/security regressions and commit.
+- [x] Write WAL-inclusive round-trip, omitted secrets, all source paths rebased, tamper/traversal/duplicate/oversize rejection, failed restore leaves original and startup activation tests.
+- [x] Run tests; expect missing maintenance service.
+- [x] Use SQLite backup API and immutable originals; reject busy imports/generation. Validate manifest/database/schema/owner/paths and stage all files. Confirm switches at next startup only; block further writes while scheduled. Preserve previous root and pointer for rollback.
+- [x] Run maintenance/startup/security regressions and commit.
 
 ### Task 4: Learner UI, integration and test.3 package
 
 **Files:** new `frontend/src/views/SettingsView.vue`, `PracticeFillView.vue`, API adapters/tests; modify routes/layout/RagView/textbook links/native bridge; update packaging and delivery docs.
 **Interfaces:** Settings contains AI purpose toggles, endpoint/model/key entry, save/clear/test and explained data export/import. Practice page selects book/chapter/types, shows proposed outbound scope/provider, job progress and candidates with source links/edit/confirm. Q&A defaults local with explicit AI choice/status. Native download uses same-origin authorization and a real save dialog.
 
-- [ ] Write user-visible tests for secret clearing/masking, local fallback, candidate preview/confirmation, pending restore and disabled actions.
-- [ ] Run UI tests RED, implement, rerun GREEN; build production UI.
-- [ ] Run full backend/frontend suites and real desktop service flow using temporary data. One independent whole-branch review; important findings get one tested fix pass.
-- [ ] Build `0.2.0-test.3`, run packaged flows, commit evidence and retain test.2. Deliver installer and exact limitations; no automatic install or live API call.
+- [x] Write user-visible tests for secret clearing/masking, local fallback, candidate preview/confirmation, pending restore and disabled actions.
+- [x] Run UI tests RED, implement, rerun GREEN; build production UI.
+- [x] Run full backend/frontend suites and real desktop service flow using temporary data. One independent whole-branch review; important findings get one tested fix pass.
+- [x] Build `0.2.0-test.3`, run packaged flows, commit evidence and retain test.2. Deliver installer and exact limitations; no automatic install or live API call.
 
 ## Execution decisions
 
