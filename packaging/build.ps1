@@ -8,7 +8,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
     & $buildPython -m PyInstaller --noconfirm --distpath dist --workpath build/pyinstaller packaging/zhitu.spec
     if ($LASTEXITCODE -ne 0) { throw 'Executable build failed' }
-    Copy-Item -LiteralPath packaging/TESTING.txt -Destination 'dist/ZhiTu-0.2.0-test.4/使用说明.txt'
+    Copy-Item -LiteralPath packaging/TESTING.txt -Destination 'dist/ZhiTu-0.2.0-test.5/使用说明.txt'
     if ($InnoCompiler) {
         & $InnoCompiler packaging/installer.iss
         if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }

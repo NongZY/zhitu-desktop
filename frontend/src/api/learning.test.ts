@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { examApi, learningApi } from './index'
+import { examApi, learningApi, questionApi } from './index'
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 vi.mock('./http', () => ({
@@ -8,6 +8,14 @@ vi.mock('./http', () => ({
 }))
 
 beforeEach(() => vi.resetAllMocks())
+
+describe('题库列表', () => {
+  it('清空筛选后省略可选参数，导入后仍能查看列表', async () => {
+    mocks.get.mockResolvedValue({ data: { items: [], total: 0 } })
+    await questionApi.list({ keyword: '', difficulty: '', type: '', textbook_id: 7, page_size: 100 })
+    expect(mocks.get).toHaveBeenCalledWith('/questions', { params: { textbook_id: 7, page_size: 100 } })
+  })
+})
 
 describe('学习详情数据', () => {
   it('巩固知识点数量不再误用错题数量', async () => {

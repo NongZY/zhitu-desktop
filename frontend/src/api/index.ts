@@ -152,8 +152,9 @@ export const questionApi = {
     )).data
   },
   async list(query: QuestionQuery = {}) {
-    const params = { ...query, question_type: query.type || undefined }
-    delete params.type
+    const { type, ...filters } = query
+    const params = Object.fromEntries(Object.entries({ ...filters, question_type: type })
+      .filter(([, value]) => value !== undefined && value !== null && value !== ''))
     const { data } = await http.get<RawQuestion[] | PageResult<RawQuestion>>('/questions', { params })
     const page = normalizePage(data)
     return { ...page, items: page.items.map(normalizeQuestion) }
