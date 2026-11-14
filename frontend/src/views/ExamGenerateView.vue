@@ -28,6 +28,7 @@ const questionTypes: Array<{ value: QuestionType; label: string }> = [
   { value: 'short_answer', label: '简答题' },
 ]
 const form = reactive<ExamGeneratePayload>({ question_count: 5, duration_minutes: 20, mode: 'adaptive', auto_fill: false, question_types: questionTypes.map(type => type.value) })
+const bank = computed(() => books.value.find(b => b.id === form.textbook_id && b.parse_status === 'standalone_question_bank'))
 function flattenChapters(nodes: Chapter[]): Chapter[] {
   return nodes.flatMap(node => [node, ...flattenChapters(node.children || [])])
 }
@@ -41,7 +42,7 @@ const knowledgePointOptions = computed(() => {
   return flattenChapters(selected ? [selected] : chapters.value).flatMap(chapter => chapter.knowledge_points || [])
 })
 const canGenerate = computed(() => !loading.value && !loadingBooks.value && !loadingChapters.value
-  && !booksError.value && !chaptersError.value && !scopeError.value && !!form.textbook_id && !!form.question_types?.length)
+  && !booksError.value && !chaptersError.value && !scopeError.value && !!form.textbook_id && (bank.value ? !!bank.value.question_count : !!form.question_types?.length))
 function changeChapter() {
   knowledgePointId.value = undefined
   scopeError.value = ''
@@ -54,6 +55,12 @@ async function loadChapters(id = form.textbook_id) {
   error.value = ''
   chaptersError.value = ''
   scopeError.value = ''
+  if (bank.value) {
+    form.question_count = Math.max(1, Math.min(5, bank.value.question_count || 0))
+    loadingChapters.value = false
+    return
+  }
+  if (![5, 10, 15].includes(form.question_count)) form.question_count = 5
   if (!id) { loadingChapters.value = false; return }
   loadingChapters.value = true
   try {
@@ -83,7 +90,7 @@ async function generate() {
   loading.value = true
   error.value = ''
   try {
-    const paper = await examApi.generate({ ...form, chapter_ids: chapterId.value ? [chapterId.value] : [], knowledge_point_ids: knowledgePointId.value ? [knowledgePointId.value] : [] })
+    const paper = await examApi.generate({ ...form, question_types: bank.value ? [] : form.question_types, chapter_ids: chapterId.value ? [chapterId.value] : [], knowledge_point_ids: knowledgePointId.value ? [knowledgePointId.value] : [] })
     await router.push(`/exam/${paper.id}/take`)
   } catch (err) { error.value = getApiErrorMessage(err, '这次练习没有准备好，请稍后再试') }
   finally { loading.value = false }
@@ -93,7 +100,7 @@ async function loadBooks() {
   booksError.value = ''
   scopeError.value = ''
   try {
-    books.value = (await textbookApi.list()).items.filter(b => ['ready', 'review'].includes(b.status))
+    books.value = (await textbookApi.list(true)).items.filter(b => b.parse_status === 'standalone_question_bank' || ['ready', 'review'].includes(b.status) || (b.question_count || 0) > 0)
     const previousBook = form.textbook_id
     if (route.query.textbook) {
       form.textbook_id = books.value.find(b => String(b.id) === route.query.textbook)?.id
@@ -114,30 +121,31 @@ watch(() => route.query, loadBooks)
 
 <template>
   <div>
-    <PageHeader title="做练习" description="选一本课本，做几道题，看看自己学会了多少。" />
+    <PageHeader title="做练习" description="从课本或独立题库中选题练习。" />
     <section class="surface-card practice-card">
       <el-alert v-if="error" type="warning" :closable="false" show-icon :title="error" />
       <p v-if="loadingBooks" role="status">正在加载课本…</p>
       <div v-else-if="booksError"><el-alert type="warning" :closable="false" title="课本暂时没有加载出来" :description="booksError" /><el-button @click="loadBooks">重新加载课本</el-button></div>
-      <el-empty v-else-if="!books.length" description="先上传一本课本，再来做练习"><el-button type="primary" @click="router.push('/textbooks')">去上传课本</el-button></el-empty>
+      <el-empty v-else-if="!books.length" description="还没有可以练习的题目"><el-button @click="router.push('/questions')">去题库导入题目</el-button><el-button type="primary" @click="router.push('/textbooks')">去上传课本</el-button></el-empty>
       <el-form v-else label-position="top" size="large" @submit.prevent="generate">
-        <el-form-item label="哪本课本？"><el-select v-model="form.textbook_id" style="width:100%"><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select></el-form-item>
-        <el-form-item label="练哪一章？"><el-select v-model="chapterId" clearable filterable :disabled="loadingChapters || !form.textbook_id" :loading="loadingChapters" placeholder="整本课本，也可以选择章节" style="width:100%" @change="changeChapter"><el-option v-for="chapter in chapterOptions" :key="chapter.id" :label="chapter.label" :value="chapter.id" /></el-select></el-form-item>
+        <el-form-item label="从哪里选题？"><el-select v-model="form.textbook_id" style="width:100%"><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select></el-form-item>
+        <el-form-item v-if="!bank" label="练哪一章？"><el-select v-model="chapterId" clearable filterable :disabled="loadingChapters || !form.textbook_id" :loading="loadingChapters" placeholder="整本课本，也可以选择章节" style="width:100%" @change="changeChapter"><el-option v-for="chapter in chapterOptions" :key="chapter.id" :label="chapter.label" :value="chapter.id" /></el-select></el-form-item>
         <el-form-item v-if="knowledgePointOptions.length" label="练哪个知识点？"><el-select v-model="knowledgePointId" clearable filterable placeholder="所选范围内的全部知识点" style="width:100%" @change="scopeError = ''"><el-option v-for="point in knowledgePointOptions" :key="point.id" :label="point.name" :value="point.id" /></el-select></el-form-item>
         <el-alert v-if="scopeError" type="warning" :closable="false" :title="scopeError" />
         <div v-if="chaptersError"><el-alert type="warning" :closable="false" title="章节暂时没有加载出来，请重试后再开始" :description="chaptersError" /><el-button @click="loadChapters()">重新加载章节</el-button></div>
-        <el-form-item label="做几道题？"><el-radio-group v-model="form.question_count"><el-radio-button :value="5">5 道</el-radio-button><el-radio-button :value="10">10 道</el-radio-button><el-radio-button :value="15">15 道</el-radio-button></el-radio-group></el-form-item>
-        <el-form-item label="练哪些题型？"><el-checkbox-group v-model="form.question_types"><el-checkbox v-for="type in questionTypes" :key="type.value" :value="type.value">{{ type.label }}</el-checkbox></el-checkbox-group></el-form-item>
-        <p v-if="!form.question_types?.length" role="alert" class="practice-note">请至少选择一种题型。</p>
-        <p class="practice-note">从你已确认的题库中选择题目。题目不够时，可以先根据教材补题、核对后保存。支持五种题型；简答题需要自己核对，不计入客观题得分率。</p>
-        <el-button @click="router.push({ path: '/practice/fill', query: { textbook: String(form.textbook_id), chapter: chapterId ? String(chapterId) : undefined } })">根据教材补充题目</el-button>
+        <el-form-item label="做几道题？"><el-input-number v-if="bank" v-model="form.question_count" :min="1" :max="Math.max(1, Math.min(200, bank.question_count || 0))" /><el-radio-group v-else v-model="form.question_count"><el-radio-button :value="5">5 道</el-radio-button><el-radio-button :value="10">10 道</el-radio-button><el-radio-button :value="15">15 道</el-radio-button></el-radio-group></el-form-item>
+        <el-form-item v-if="!bank" label="练哪些题型？"><el-checkbox-group v-model="form.question_types"><el-checkbox v-for="type in questionTypes" :key="type.value" :value="type.value">{{ type.label }}</el-checkbox></el-checkbox-group></el-form-item>
+        <p v-if="!bank && !form.question_types?.length" role="alert" class="practice-note">请至少选择一种题型。</p>
+        <p v-if="bank" class="practice-note">独立题库有 {{ bank.question_count }} 道可练习的题目。<el-button link type="primary" @click="router.push('/questions')">去题库导题</el-button></p>
+        <p v-else class="practice-note">从你已确认的题库中选择题目。题目不够时，可以先根据教材补题、核对后保存。支持五种题型；简答题需要自己核对，不计入客观题得分率。</p>
+        <el-button v-if="!bank" @click="router.push({ path: '/practice/fill', query: { textbook: String(form.textbook_id), chapter: chapterId ? String(chapterId) : undefined } })">根据教材补充题目</el-button>
         <el-button text @click="advanced = !advanced">{{ advanced ? '收起设置' : '更多设置（可不改）' }}</el-button>
         <div v-if="advanced">
           <el-form-item label="练习方式"><el-radio-group v-model="form.mode"><el-radio value="adaptive">多练不熟的内容</el-radio><el-radio value="random">随机练习</el-radio></el-radio-group></el-form-item>
           <el-form-item label="练习时间（分钟）"><el-input-number v-model="form.duration_minutes" :min="1" :max="180" /></el-form-item>
         </div>
         <el-button class="start-button" type="primary" size="large" :disabled="!canGenerate" :loading="loading" native-type="submit">{{ loading ? '正在准备题目…' : '开始练习' }}</el-button>
-        <el-button text @click="router.push(`/textbooks/${form.textbook_id}`)">先读课本</el-button>
+        <el-button v-if="!bank" text @click="router.push(`/textbooks/${form.textbook_id}`)">先读课本</el-button>
       </el-form>
     </section>
   </div>

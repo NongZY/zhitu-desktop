@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, or_, select
+from pydantic import BaseModel, Field
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.access import (
@@ -19,6 +20,9 @@ from app.schemas import (
     QuestionUpdate,
 )
 from app.security import get_current_user
+
+from app.services.practice_content import CandidateContent, fingerprint
+from app.services.standalone_questions import question_bank
 
 router = APIRouter(prefix="/questions", tags=["题库"])
 
@@ -95,14 +99,52 @@ def list_questions(
     return QuestionList(items=items, total=total, page=page, page_size=page_size)
 
 
+def _new_question(db: Session, payload: QuestionCreate, user_id: int) -> Question:
+    if payload.textbook_id is None:
+        payload = payload.model_copy(update={"textbook_id": question_bank(db, user_id).id})
+    _validate_links(db, payload, user_id)
+    return Question(**payload.model_dump(), created_by=user_id)
+
+
+class FileImport(BaseModel):
+    textbook_id: int | None = None
+    questions: list[CandidateContent] = Field(min_length=1, max_length=500)
+
+
+@router.post("/import", status_code=201)
+def import_question_file(payload: FileImport, current_user: User = Depends(get_current_user),
+                         db: Session = Depends(get_db)) -> dict[str, int]:
+    if payload.textbook_id is None:
+        book = question_bank(db, current_user.id)
+    else:
+        book = owned_textbook_or_404(db, payload.textbook_id, current_user.id)
+        db.execute(update(Textbook).where(Textbook.id == book.id).values(updated_at=Textbook.updated_at))
+    incoming = [q.model_dump() for q in payload.questions]
+    rows = db.scalars(select(Question).where(
+        Question.textbook_id == book.id, Question.stem.in_([q["stem"] for q in incoming]),
+    ))
+    known = {fingerprint({"question_type": q.question_type, "stem": q.stem,
+                          "options": q.options, "correct_answer": q.correct_answer}) for q in rows}
+    imported = 0
+    for content in incoming:
+        key = fingerprint(content)
+        if key in known:
+            continue
+        known.add(key)
+        db.add(Question(**content, textbook_id=book.id, created_by=current_user.id,
+                        source="文件导入", status="approved"))
+        imported += 1
+    db.commit()
+    return {"textbook_id": book.id, "imported": imported, "skipped": len(incoming) - imported}
+
+
 @router.post("", response_model=QuestionRead, status_code=status.HTTP_201_CREATED)
 def create_question(
     payload: QuestionCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Question:
-    _validate_links(db, payload, current_user.id)
-    question = Question(**payload.model_dump(), created_by=current_user.id)
+    question = _new_question(db, payload, current_user.id)
     db.add(question)
     db.commit()
     db.refresh(question)
@@ -119,8 +161,7 @@ def batch_import_questions(
     errors: list[dict[str, object]] = []
     for index, item in enumerate(payload.questions):
         try:
-            _validate_links(db, item, current_user.id)
-            question = Question(**item.model_dump(), created_by=current_user.id)
+            question = _new_question(db, item, current_user.id)
             db.add(question)
             db.flush()
             created.append(question)
@@ -152,6 +193,11 @@ def update_question(
 ) -> Question:
     question = owned_question_or_404(db, question_id, current_user.id)
     changes = payload.model_dump(exclude_unset=True)
+    if "textbook_id" in changes and changes["textbook_id"] is None:
+        changes["textbook_id"] = question_bank(db, current_user.id).id
+    if changes.get("textbook_id", question.textbook_id) != question.textbook_id:
+        changes.setdefault("chapter_id", None)
+        changes.setdefault("knowledge_point_id", None)
     merged = QuestionUpdate(
         textbook_id=changes.get("textbook_id", question.textbook_id),
         chapter_id=changes.get("chapter_id", question.chapter_id),

@@ -44,12 +44,14 @@ from app.security import get_current_user
 from app.services.pdf_outline import apply_outline, chapter_scope_ids, extract_outline
 from app.services.pdf_reader import page_count, reader_metadata, searchable
 from app.services.storage import materialize
+from app.services.standalone_questions import BANK_STATUS
 
 router = APIRouter(tags=["教材与知识点"])
 
 
 @router.get("/textbooks", response_model=TextbookList)
 def list_textbooks(
+    include_question_bank: bool = False,
     q: str | None = None,
     subject: str | None = None,
     grade: str | None = None,
@@ -59,6 +61,8 @@ def list_textbooks(
     db: Session = Depends(get_db),
 ) -> TextbookList:
     stmt = select(Textbook).where(Textbook.owner_id == current_user.id)
+    if not include_question_bank:
+        stmt = stmt.where(Textbook.parse_status != BANK_STATUS)
     if q:
         stmt = stmt.where(or_(Textbook.title.contains(q), Textbook.description.contains(q)))
     if subject:
@@ -80,7 +84,8 @@ def list_textbooks(
     )
     question_count = (
         select(func.count(Question.id))
-        .where(Question.textbook_id == Textbook.id)
+        .where(Question.textbook_id == Textbook.id,
+               or_(Textbook.parse_status != BANK_STATUS, Question.status == "approved"))
         .correlate(Textbook)
         .scalar_subquery()
     )
@@ -108,7 +113,7 @@ def list_textbooks(
             func.coalesce(latest_progress, 0).label("processing_progress"),
             latest_message.label("processing_message"),
         )
-        .order_by(Textbook.updated_at.desc())
+        .order_by((Textbook.parse_status == BANK_STATUS).desc(), Textbook.updated_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()

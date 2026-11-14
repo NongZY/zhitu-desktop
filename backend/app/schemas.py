@@ -149,7 +149,7 @@ QuestionStatus = Literal["draft", "pending", "approved", "rejected"]
 
 
 class QuestionCreate(BaseModel):
-    textbook_id: int
+    textbook_id: int | None = None
     chapter_id: int | None = None
     knowledge_point_id: int | None = None
     question_type: QuestionType

@@ -1,6 +1,8 @@
 # 智能自适应学习系统
 
-> 本目录是 **Windows 应用版的独立项目**。最新安装包为 `dist\installers\ZhiTu-0.2.0-test.3-Setup.exe`，支持 PDF、DOCX、PPTX、TXT、MD 本地学习，新增可选 AI 问答、教材正文补题、备份和恢复。先关闭旧版，再双击安装包更新；已安装程序不会自动更新。安装包位置、范围和验证记录见 [D3 测试版说明](docs/DESKTOP_CORE_D3.md)，历史记录见 [D2 说明](docs/DESKTOP_DOCUMENTS_D2.md) 和 [D1 说明](docs/DESKTOP_TEST_BUILD.md)。原网页版继续保留在 `E:\项目\学习系统`，不受本目录改动影响。
+下载 Windows 安装包请前往 [GitHub Releases](https://github.com/NongZY/zhitu-desktop/releases)。
+
+> 本目录是 **Windows 应用版的独立项目**。当前桌面版本为 **0.2.0-test.4**。在“我的题库 → 导入题目”选择 UTF-8 TXT 或粘贴带答案的题目，可直接保存到独立题库并练习。每批最多 500 题，支持单选、多选、判断、填空和简答。Windows 本地构建后的安装包为 `dist\installers\ZhiTu-0.2.0-test.4-Setup.exe`，支持 PDF、DOCX、PPTX、TXT、MD 本地学习，新增可选 AI 问答、教材正文补题、备份和恢复。先关闭旧版，再双击安装包更新；已安装程序不会自动更新。安装包位置、范围和验证记录见 [D3 测试版说明](docs/DESKTOP_CORE_D3.md)，历史记录见 [D2 说明](docs/DESKTOP_DOCUMENTS_D2.md) 和 [D1 说明](docs/DESKTOP_TEST_BUILD.md)。原网页版继续保留在 `E:\项目\学习系统`，不受本目录改动影响。
 >
 > 应用版开发启动：在 PyCharm 使用应用版 `backend\.venv\Scripts\python.exe`，运行根目录 `run_desktop.py`。无需 Docker，不打开浏览器。准备步骤、数据位置和验收边界见 [桌面 D1 说明](docs/DESKTOP_D1.md)、[版本来源](docs/VERSION_LINEAGE.md) 和 [整体设计](docs/superpowers/specs/2026-10-20-windows-local-app-design.md)。AI 默认关闭，可在软件设置中配置自己的兼容接口。
 

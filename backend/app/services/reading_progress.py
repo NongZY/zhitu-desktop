@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.access import owned_textbook_or_404
+from app.services.standalone_questions import BANK_STATUS
 from app.models import Chapter, ReadingProgress, Textbook, utcnow
 from app.schemas import ContinueReading, ReadingHome, ReadingProgressRead, ReadingProgressWrite
 from app.services.pdf_reader import reader_metadata
@@ -99,7 +100,7 @@ def save_progress(
 
 
 def get_reading_home(db: Session, user_id: int) -> ReadingHome:
-    count = db.scalar(select(func.count()).select_from(Textbook).where(Textbook.owner_id == user_id)) or 0
+    count = db.scalar(select(func.count()).select_from(Textbook).where(Textbook.owner_id == user_id, Textbook.parse_status != BANK_STATUS)) or 0
     notice = None
     batch_size, offset = 100, 0
     while True:

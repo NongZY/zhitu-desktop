@@ -80,8 +80,8 @@ export const textbookApi = {
       params: { page, page_size: 10 },
     })).data
   },
-  async list() {
-    const { data } = await http.get<Textbook[] | PageResult<Textbook>>('/textbooks')
+  async list(includeQuestionBank = false) {
+    const { data } = await http.get<Textbook[] | PageResult<Textbook>>('/textbooks', includeQuestionBank ? { params: { include_question_bank: true, page_size: 100 } } : undefined)
     const page = normalizePage(data)
     return { ...page, items: page.items.map(normalizeTextbook) }
   },
@@ -144,6 +144,13 @@ export const readingApi = {
 }
 
 export const questionApi = {
+  async importFile(questions: QuestionPayload[], textbook_id?: string | number) {
+    const rows = questions.map(q => ({ question_type: q.type, stem: q.stem, options: q.options,
+      correct_answer: q.answer, difficulty: q.difficulty, explanation: q.analysis || '' }))
+    return (await http.post<{ textbook_id: number; imported: number; skipped: number }>(
+      '/questions/import', { textbook_id, questions: rows },
+    )).data
+  },
   async list(query: QuestionQuery = {}) {
     const params = { ...query, question_type: query.type || undefined }
     delete params.type

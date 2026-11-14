@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.access import owned_global_knowledge_point_ids
 from app.database import get_db
+from app.services.standalone_questions import BANK_STATUS
 from app.models import (
     AnswerDetail,
     Chapter,
@@ -189,7 +190,7 @@ def dashboard(
     )
     textbook_count = (
         db.scalar(
-            select(func.count()).select_from(Textbook).where(Textbook.owner_id == current_user.id)
+            select(func.count()).select_from(Textbook).where(Textbook.owner_id == current_user.id, Textbook.parse_status != BANK_STATUS)
         )
         or 0
     )

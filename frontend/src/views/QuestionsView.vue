@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import QuestionImport from '../components/QuestionImport.vue'
 import MathContent from '../components/MathContent.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
@@ -35,7 +36,6 @@ const form = reactive({
 })
 const rules: FormRules = {
   stem: [{ required: true, message: '请输入题干', trigger: 'blur' }],
-  textbook_id: [{ required: true, message: '请选择教材', trigger: 'change' }],
   answerText: [{ required: true, message: '请输入标准答案', trigger: 'blur' }],
 }
 
@@ -64,7 +64,7 @@ async function load() {
 
 function resetForm() {
   editingId.value = undefined
-  Object.assign(form, { stem: '', type: 'single_choice', textbook_id: books.value[0]?.id, chapter_id: undefined, knowledge_point_id: undefined, difficulty: 3, status: 'approved', optionsText: 'A. \nB. \nC. \nD. ', answerText: '', analysis: '' })
+  Object.assign(form, { stem: '', type: 'single_choice', textbook_id: undefined, chapter_id: undefined, knowledge_point_id: undefined, difficulty: 3, status: 'approved', optionsText: 'A. \nB. \nC. \nD. ', answerText: '', analysis: '' })
 }
 
 function openCreate() {
@@ -97,7 +97,7 @@ function openEdit(question: Question) {
 function payload(): QuestionPayload {
   const optionLines = form.optionsText.split('\n').map((value) => value.trim()).filter(Boolean)
   let answer: QuestionPayload['answer'] = form.answerText.trim()
-  if (form.type === 'multiple_choice') answer = form.answerText.split(',').map((value) => value.trim()).filter(Boolean)
+  if (form.type === 'multiple_choice') answer = form.answerText.toUpperCase().split(/[,，、\s]+/).map((value) => value.trim()).filter(Boolean)
   if (form.type === 'true_false') answer = ['正确', 'true', '对', '1'].includes(form.answerText.trim().toLowerCase())
   return {
     stem: form.stem,
@@ -107,7 +107,7 @@ function payload(): QuestionPayload {
     knowledge_point_id: form.knowledge_point_id,
     difficulty: form.difficulty,
     status: form.status,
-    options: ['single_choice', 'multiple_choice'].includes(form.type) ? optionLines.map((text, index) => ({ key: String.fromCharCode(65 + index), text })) : undefined,
+    options: ['single_choice', 'multiple_choice'].includes(form.type) ? optionLines.map((text, index) => ({ key: String.fromCharCode(65 + index), text: text.replace(/^[A-H][.．、]\s*/i, '') })) : undefined,
     answer,
     analysis: form.analysis,
   }
@@ -115,13 +115,14 @@ function payload(): QuestionPayload {
 
 async function save() {
   if (!formRef.value || !(await formRef.value.validate().catch(() => false))) return
+  if (form.type === 'true_false' && !/^(对|错|正确|错误|true|false|1|0)$/i.test(form.answerText.trim())) return ElMessage.warning('判断题答案请填写“对”或“错”。')
   saving.value = true
   try {
     if (editingId.value) await questionApi.update(editingId.value, payload())
     else await questionApi.create(payload())
     ElMessage.success(editingId.value ? '题目已更新' : '题目已加入我的题库')
     dialogVisible.value = false
-    await load()
+    await refreshBank()
   } catch (err) {
     ElMessage.error(getApiErrorMessage(err, '保存题目失败'))
   } finally {
@@ -142,21 +143,23 @@ async function remove(question: Question) {
   }
 }
 
-onMounted(async () => {
-  const [bookResult] = await Promise.allSettled([textbookApi.list()])
+async function refreshBank(id?: number) {
+  if (id !== undefined) Object.assign(filters, { textbook_id: id, keyword: '', type: '', difficulty: '' })
+  const [bookResult] = await Promise.allSettled([textbookApi.list(true)])
   if (bookResult.status === 'fulfilled') books.value = bookResult.value.items
   await load()
-})
+}
+onMounted(() => refreshBank())
 </script>
 
 <template>
   <div>
     <PageHeader eyebrow="My Question Bank" title="我的题库" description="整理教材习题与自己添加的题目，随时编辑并决定哪些题用于练习。">
-      <template #actions><el-button @click="router.push({ path: '/practice/fill', query: { textbook: filters.textbook_id ? String(filters.textbook_id) : undefined } })">根据教材补题</el-button><el-button type="primary" :icon="CirclePlus" @click="openCreate">添加题目</el-button></template>
+      <template #actions><el-button v-if="filters.textbook_id" @click="router.push({ path: '/exam/generate', query: { textbook: String(filters.textbook_id) } })">练这组题</el-button><el-button v-if="!books.some(b => b.id === filters.textbook_id && b.parse_status === 'standalone_question_bank')" @click="router.push({ path: '/practice/fill', query: { textbook: filters.textbook_id ? String(filters.textbook_id) : undefined } })">根据教材补题</el-button><el-button :icon="CirclePlus" @click="openCreate">添加题目</el-button><QuestionImport :books="books" @imported="refreshBank" /></template>
     </PageHeader>
     <section class="surface-card filter-bar">
       <el-input v-model="filters.keyword" class="search-input" clearable placeholder="搜索题干" :prefix-icon="Search" @keyup.enter="load" @clear="load" />
-      <el-select v-model="filters.textbook_id" clearable placeholder="全部教材" @change="load"><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select>
+      <el-select v-model="filters.textbook_id" clearable placeholder="全部题目来源" @change="load"><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select>
       <el-select v-model="filters.type" clearable placeholder="全部题型" @change="load"><el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select>
       <el-select v-model="filters.difficulty" clearable placeholder="全部难度" @change="load"><el-option v-for="level in 5" :key="level" :label="`${level} 星`" :value="level" /></el-select>
       <el-button @click="load">查询</el-button><span class="filter-spacer"></span><span class="soft-label">共 {{ total }} 道题</span>
@@ -175,7 +178,7 @@ onMounted(async () => {
 
     <el-dialog v-model="dialogVisible" :title="editingId ? '编辑题目' : '录入题目'" width="min(680px, 94vw)" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="教材" prop="textbook_id"><el-select v-model="form.textbook_id" style="width:100%"><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select></el-form-item>
+        <el-form-item label="保存到"><el-select v-model="form.textbook_id" clearable placeholder="独立题库（无需教材）" style="width:100%"><el-option v-for="book in books" :key="book.id" :label="book.title" :value="book.id" /></el-select></el-form-item>
         <div class="form-grid"><el-form-item label="题型"><el-select v-model="form.type"><el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item><el-form-item label="使用状态"><el-select v-model="form.status"><el-option label="暂存草稿" value="draft" /><el-option label="等待确认" value="pending" /><el-option label="可用于练习" value="approved" /><el-option label="暂不使用" value="rejected" /></el-select></el-form-item></div>
         <el-form-item label="难度"><el-rate v-model="form.difficulty" /></el-form-item>
         <el-form-item label="题干" prop="stem"><el-input v-model="form.stem" type="textarea" :rows="3" placeholder="请输入题目内容" /></el-form-item>
