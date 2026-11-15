@@ -1,251 +1,92 @@
-# 智能自适应学习系统
+# 知途 · 本地自主学习桌面软件
 
-下载 Windows 安装包请前往 [GitHub Releases](https://github.com/NongZY/zhitu-desktop/releases)。
+知途是一款面向自主学习者的 Windows 桌面软件。你可以带着自己的课本来读、查、问、练，也可以只带一份题目，直接开始练习。每台电脑有自己的学习空间，首次打开即可使用，无需注册账号。
 
-> 本目录是 **Windows 应用版的独立项目**。当前桌面版本为 **0.2.0-test.5**。在“我的题库 → 导入题目”选择 UTF-8 TXT 或粘贴带答案的题目，可直接保存到独立题库并练习。每批最多 500 题，支持单选、多选、判断、填空和简答。Windows 本地构建后的安装包为 `dist\installers\ZhiTu-0.2.0-test.5-Setup.exe`，支持 PDF、DOCX、PPTX、TXT、MD 本地学习，新增可选 AI 问答、教材正文补题、备份和恢复。先关闭旧版，再双击安装包更新；已安装程序不会自动更新。安装包位置、范围和验证记录见 [D3 测试版说明](docs/DESKTOP_CORE_D3.md)，历史记录见 [D2 说明](docs/DESKTOP_DOCUMENTS_D2.md) 和 [D1 说明](docs/DESKTOP_TEST_BUILD.md)。原网页版继续保留在 `E:\项目\学习系统`，不受本目录改动影响。
->
-> 应用版开发启动：在 PyCharm 使用应用版 `backend\.venv\Scripts\python.exe`，运行根目录 `run_desktop.py`。无需 Docker，不打开浏览器。准备步骤、数据位置和验收边界见 [桌面 D1 说明](docs/DESKTOP_D1.md)、[版本来源](docs/VERSION_LINEAGE.md) 和 [整体设计](docs/superpowers/specs/2026-10-20-windows-local-app-design.md)。AI 默认关闭，可在软件设置中配置自己的兼容接口。
+**当前测试版为 0.2.0-test.5。** [下载 Windows x64 安装包](https://github.com/NongZY/zhitu-desktop/releases/download/desktop-0.2.0-test.5/ZhiTu-0.2.0-test.5-Setup.exe) · [查看版本说明](https://github.com/NongZY/zhitu-desktop/releases/tag/desktop-0.2.0-test.5)
 
-两端已共同纳入[教材内容驱动的补题方案](docs/superpowers/specs/2026-10-20-textbook-question-fill-design.md)：根据导入教材的正文与知识要点生成配套候选，确认后保存到对应教材。桌面 test.3 已实现有限数学规则、明确原题提取及可选 AI 补题，支持五种题型；本批没有将实现同步到网页版。离线规则不等于全学科离线 AI。
+## 安装和首次使用
 
-## 以下为网页版基线参考（不是应用版启动步骤）
+1. 下载上方的 `ZhiTu-0.2.0-test.5-Setup.exe`。如果已打开旧版知途，先关闭窗口，再运行安装包。
+2. 安装后从开始菜单打开「知途（测试版）」。普通使用者无需安装 Python、Node.js 或 Docker。
+3. 有学习资料时，从「我的课本 → 上传课本」开始。只有题目时，直接打开「我的题库 → 导入题目」。
 
-网页版基线保存说明见 [网页版版本记录](docs/WEB_BASELINE.md)。以下旧 Web／Docker／账户配置仅供追溯，不适用于桌面运行模式；请勿依此把新应用连接到旧数据目录。
+支持 Windows 10 1809 或更新版本以及 Windows 11 的 x64 系统。安装器会检查 Microsoft Edge WebView2 Runtime 和 .NET Framework 4.6.2 或更高版本。若提示缺少组件，安装提示中的运行时后重新打开安装器。此版本已在开发机验证，尚未完成干净 Windows 系统的兼容性验收。[WebView2 官方下载](https://developer.microsoft.com/microsoft-edge/webview2/) · [.NET Framework 官方下载](https://dotnet.microsoft.com/download/dotnet-framework)
 
-这是一个面向所有自主学习者、以教材为中心的 Web 学习平台工程，采用 Vue 3 + FastAPI + PostgreSQL + Redis + MinIO，并为 PDF 解析、RAG 问答、个人题库、模拟测试、掌握度计算和跨教材知识图谱预留清晰的模块边界。每个学习者拥有彼此隔离的私有教材库，可以自行导入、校对、建题、练习和持续积累学习数据。
+## 只带题目，怎么开始练习？
 
-当前仓库优先提供可运行的 MVP 和可渐进替换的 AI 接口。默认启动不要求大模型 API Key，也不强制下载体积较大的 OCR/向量模型；当前 RAG 使用可运行的关键词基线，生产级 OCR、向量检索、主观题评分和知识图谱治理按照[路线图](docs/ROADMAP.md)逐步启用。
-
-产品采用单一学习者账户模型。每个账户只管理自己的教材与学习数据；跨教材成长、错题延续和掌握度迁移也只发生在同一账户内部，不读取或合并其他学习者的数据。
-
-## 能力范围
-
-| 模块 | 当前工程目标 | AI 增强方向 |
-| --- | --- | --- |
-| 账户与私有空间 | 学习者注册、JWT 登录、个人数据隔离 | 数据导出、删除与跨设备同步 |
-| 教材管理 | 私有教材、章节、知识点、文件和解析任务 | 目录识别、OCR、知识点/习题结构化与学习者校对 |
-| 教材问答 | 文档片段检索、答案与来源引用接口 | BGE 向量化、重排、受约束的 LLM 生成 |
-| 题库与测试 | 多题型、组卷、测试记录、自动判客观题 | AI 生成题候选、主观题辅助评分 |
-| 自适应学习 | 答题明细、错题、知识点掌握度与薄弱项 | 难度校准、时间衰减、前置知识复习 |
-| 成长路径 | 同一学习者的跨教材掌握度与错题延续 | 私有知识图谱、路径推荐与可视化 |
-
-> 重要边界：AI 生成的题目、答案、知识点映射和主观题评分只能作为候选结果，必须保留来源与模型版本，并由教材所属的学习者确认后使用。
-
-## PyCharm 本地启动（无需 Docker）
-
-用 PyCharm 打开项目根目录，选择 **学习系统（本地，不用 Docker）** 后点击运行，
-或右键运行根目录的 `run_local.py`。网页地址为 **http://127.0.0.1:8081**。
-数据保存在 `data/local/`，与 Docker 数据和旧本地数据库隔离；不要求开启虚拟化。
-详细步骤和备份说明见 [本地运行说明](docs/LOCAL_RUN.md)。
-
-## Docker 启动（可选，Windows PowerShell）
-
-前置条件：Docker Desktop 已启动，支持 `docker compose`；建议至少 8 GB 可用内存。默认会占用 `8080`、`8000`、`5432`、`6379`、`9000`、`9001` 端口，可在 `.env` 中修改。
-
-```powershell
-Set-Location "E:\项目\学习系统"
-Copy-Item .env.example .env
-docker compose config --quiet
-docker compose up -d --build
-docker compose ps
-docker compose exec backend python -m app.seed
-```
-
-首次构建耗时取决于网络。`backend` 和 `frontend` 显示为 `healthy` 后即可访问：
-
-| 入口 | 地址 |
-| --- | --- |
-| Web 应用 | <http://localhost:8080> |
-| API 文档（Swagger） | <http://localhost:8000/docs> |
-| API 健康检查 | <http://localhost:8000/api/v1/health> |
-| MinIO 控制台 | <http://localhost:9001> |
-
-macOS/Linux 可将复制命令替换为 `cp .env.example .env`，其余命令相同。
-
-### 本地演示账号
-
-账号不会在服务启动时静默创建。执行上面的幂等 seed 命令后，才会得到以下仅供本地开发使用的账号：
-
-| 账号 | 邮箱 | 初始密码 |
-| --- | --- | --- |
-| 学习者 | `learner@example.com` | `Learn123!` |
-
-MinIO 的本地账号来自 `.env` 中的 `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`。任何共享、测试或生产部署都必须先替换全部示例密码和 JWT 密钥；不要把 `.env` 提交到 Git。
-
-## 架构
-
-```mermaid
-flowchart TB
-    U[浏览器 / Vue 3] -->|HTTP :8080| N[Nginx 静态站点与反向代理]
-    N -->|/api/v1| A[FastAPI 模块化单体]
-    A --> P[(PostgreSQL)]
-    A --> R[(Redis)]
-    A --> O[(MinIO 私有桶)]
-    A --> V[(Chroma 本地向量数据)]
-    A -->|投递耗时任务| C[Celery Worker]
-    C --> R
-    C --> P
-    C --> O
-    C -.可选.-> M[OCR / Embedding / LLM]
-```
-
-初期采用模块化单体，避免过早拆分服务；PDF/OCR/向量化/大模型调用通过 Celery 与请求链路隔离。MVP 选择本地 Chroma 数据目录，规模或并发达到瓶颈后再通过存储适配器迁移 Milvus。更完整的组件边界、数据流和设计决策见[架构说明](docs/ARCHITECTURE.md)。
-
-### 容器与数据
-
-| Compose 服务 | 用途 | 持久化位置 |
-| --- | --- | --- |
-| `frontend` | 构建后的 Vue SPA，由 Nginx 提供并代理 API | 镜像内静态资源 |
-| `backend` | FastAPI API | `backend_data`（上传临时文件与后续向量索引目录） |
-| `worker` | Celery 异步任务 | 与 backend 共享 `backend_data`、模型缓存 |
-| `postgres` | 业务主数据 | `postgres_data` |
-| `redis` | 缓存、Broker、任务结果 | `redis_data` |
-| `minio` / `minio-init` | 私有教材对象与初始化桶 | `minio_data` |
-
-命名卷默认由 Docker 管理。`docker compose down` 保留数据；`docker compose down --volumes` 会永久删除本项目的本地数据库、对象和缓存。
-
-## 目录结构
+在「我的题库 → 导入题目」中保留默认的「独立题库」，选择 UTF-8 编码的 TXT 文件，或直接粘贴题目。每道题写明题型，答案单独一行，可附解析。可以先复制下面两题试用。
 
 ```text
-学习系统/
-├─ backend/                 FastAPI、领域模型、任务与测试
-├─ frontend/                Vue 3、Pinia、Element Plus 与页面
-├─ deploy/
-│  └─ nginx.conf            SPA 回退、API 代理、上传与超时配置
-├─ docs/
-│  ├─ ARCHITECTURE.md       架构、边界、流程与非功能要求
-│  └─ ROADMAP.md            分阶段里程碑和验收门槛
-├─ .env.example             无密钥的配置模板
-├─ docker-compose.yml       本地一体化运行环境
-├─ Makefile                 常用命令快捷入口
-└─ README.md
+【单选题】下列哪个数是偶数？
+A. 3
+B. 4
+答案：B
+解析：4 可以被 2 整除。
+
+【判断题】0 是正数。
+答案：错
 ```
 
-## 常用运维命令
+核对预览后点「确认导入 → 练这组题 → 开始练习」。只有一道题也可以练。题库支持单选、多选、判断、填空和简答，每批最多 500 道，TXT 文件最大 2 MB。多选答案可以写成 `答案：A、C`。简答题填写参考答案，交卷后自行核对。已导入的重复题会跳过。也可以在导入时选择一本已有的教材，把练习题归到那本书。
 
-安装 GNU Make 且已经完成本地前后端依赖安装的环境可运行 `make help`、`make up`、`make logs`、`make test`。Windows 不需要安装 Make，直接使用等价的 PowerShell 命令：
+## 带着教材学习
+
+| 想做什么 | 在软件里怎么做 |
+| --- | --- |
+| 阅读和查找 | 在「我的课本」导入 PDF、DOCX、PPTX、TXT 或 Markdown（.md）。打开资料后按目录阅读、查找关键词，下次可继续上次的位置。 |
+| 看清公式和图表 | 阅读 PDF 时查看原页，保留公式、插图和底色。纯扫描页可以阅读，文字搜索依赖可提取的文字。Word 和 PowerPoint 提供结构化阅读，复杂公式请对照原文件。 |
+| 从教材中找答案 | 打开「问一问」，选择教材并输入问题。默认在本地查找相关片段，可根据引用回到原文核对。 |
+| 依照教材补题 | 在「教材补题」选择教材与范围。离线规则覆盖部分数学内容，原题提取支持明确标注题目与答案的简答题。生成后先预览、修改，再把选中的题加入题库。 |
+| 做练习和复习 | 在「做练习」选择题库或教材。教材练习可选章节、题型，并使用随机或自适应方式。交卷后到「学习记录」查看逐题答案与错题，到「学习进度」查看已有作答数据对应的知识点掌握情况。 |
+
+## 可选的 AI 问答和补题
+
+导入、阅读、原文查找、独立导题和本地练习均可离线使用。需要 AI 解释或配套练习时，在「设置 → AI 帮助」填写兼容 Chat Completions 的接口地址、模型名称和自己的 API 密钥，分别勾选问答或补题并保存。可先点「测试连接」验证配置。
+
+AI 默认关闭。问答时选择 AI 解释、补题时确认发送后，程序才会将相应问题或必要的教材片段交给所配置的服务商，费用按服务商规则计算。生成的答案和题目可以对照原文核对。
+
+## 数据保存、备份和换电脑
+
+学习数据位于当前 Windows 账户的 `%LOCALAPPDATA%\ZhiTu\`。在「设置 → 备份和恢复」点「创建并导出备份」，可以将教材原件、题库和学习记录一起保存为 ZIP。
+
+换电脑时先安装知途，在同一设置页选择备份 ZIP，核对教材、题目和练习数量，确认后重启。恢复会切换到备份中的学习空间，原空间会保留，两边的记录各自独立。AI 密钥保存在原电脑，换机后需重新填写。
+
+## 从源码运行（开发者）
+
+桌面窗口使用 pywebview 和 WebView2，界面使用 Vue 3 + TypeScript + Vite，FastAPI 本地服务使用 SQLite 保存学习数据。以下 PowerShell 命令从 Windows x64 的空目录开始。已验证的开发环境使用 Python 3.13、Node.js 24 和 npm。
 
 ```powershell
-# 查看状态 / 日志
-docker compose ps
-docker compose logs -f --tail=200 backend worker
-
-# 重建应用，不动数据库和对象存储
-docker compose up -d --build backend worker frontend
-
-# 停止并保留数据
-docker compose down --remove-orphans
-
-# 完全清空本项目的本地 Docker 数据（不可恢复）
-docker compose down --volumes --remove-orphans
+git clone https://github.com/NongZY/zhitu-desktop.git
+cd zhitu-desktop
+py -3.13 -m venv backend\.venv
+.\backend\.venv\Scripts\python.exe -m pip install -e "./backend[desktop,dev,migration]"
+npm.cmd --prefix frontend ci
+npm.cmd --prefix frontend run build
+.\backend\.venv\Scripts\python.exe run_desktop.py
 ```
 
-## 本地开发
+使用 PyCharm 时，打开仓库根目录，完成首次依赖安装和界面构建，选择 `backend\.venv\Scripts\python.exe` 作为解释器，右键运行 `run_desktop.py`。源码版与安装版使用同一 Windows 账户的学习空间，开发测试请使用测试夹具。
 
-### 后端
-
-需要 Python 3.10+。不运行 Compose 时，后端默认可使用 SQLite 和 eager Celery，便于单进程开发。
+**运行测试**
 
 ```powershell
-Set-Location backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-python -m app.seed
-uvicorn app.main:app --reload --port 8000
+npm.cmd --prefix frontend test
+Push-Location backend
+.\.venv\Scripts\python.exe -m pytest
+Pop-Location
 ```
 
-若 PowerShell 禁止激活脚本，可不激活，直接运行 `.\.venv\Scripts\python.exe -m pip ...` 和 `.\.venv\Scripts\python.exe -m uvicorn ...`。接入 Compose 的 PostgreSQL/Redis 时，应在当前终端设置对应 URL，且注意容器内主机名 `postgres` / `redis` 在宿主机应改为 `localhost`。
-
-### 前端
-
-需要 Node.js 20+ 和 npm：
+**构建 Windows 发行包**
 
 ```powershell
-Set-Location frontend
-npm install
-npm run dev
+.\backend\.venv\Scripts\python.exe -m pip install -r packaging\requirements-build.txt
+.\packaging\build.ps1
 ```
 
-开发服务器默认访问 <http://localhost:5173>，通过 `VITE_API_BASE_URL` 连接 API。若不走 Vite 代理，请确保后端 `CORS_ORIGINS` 包含该地址。
+完成后打开 `dist\ZhiTu-0.2.0-test.5\知途.exe`。需要制作安装器时，安装 Inno Setup 6，再运行 `.\packaging\build.ps1 -InnoCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`，按实际安装位置调整路径。安装器位于 `dist\installers\`。
 
-### 测试与构建检查
+## 反馈与开源许可
 
-```powershell
-# 后端
-Set-Location backend
-python -m pytest
+欢迎报告问题和提交改进。反馈时附上软件版本、Windows 版本、复现步骤和报错提示。若问题与文件有关，可附一小段自制示例。[提交 Issue](https://github.com/NongZY/zhitu-desktop/issues)
 
-# 前端
-Set-Location ..\frontend
-npm run typecheck
-npm run test
-npm run build
-
-# Compose 配置
-Set-Location ..
-docker compose --env-file .env.example config --quiet
-```
-
-## API 使用
-
-业务 API 统一以 `/api/v1` 为前缀，Swagger UI 会从实际代码生成最新契约。典型调用顺序如下：
-
-1. 注册或使用 seed 账号登录，取得 Bearer Token。
-2. 学习者在自己的私有教材库中创建教材并上传 PDF。
-3. 轮询解析任务，校对章节、知识点、习题并确认映射候选。
-4. 按教材或章节练习，也可创建自适应试卷。
-5. 交卷后读取成绩、逐题结果、错题和知识点掌握度。
-6. 问答请求返回答案以及教材、章节、页码/片段引用。
-
-接口字段以 <http://localhost:8000/docs> 为准。客户端不得依赖数据库内部 ID 的排序，也不得绕过题目确认状态直接使用 LLM 生成内容。
-
-## PDF、OCR 与 RAG 可选配置
-
-默认配置有意保持轻量：数字版 PDF 可用 PyMuPDF 抽取文本；`LLM_PROVIDER=disabled` 时应用应继续提供非生成式功能。要接入模型能力，请在 `.env` 中配置而不是修改源码：
-
-```dotenv
-# OpenAI-compatible 服务示例；不要提交真实密钥
-LLM_PROVIDER=openai-compatible
-LLM_API_URL=https://your-provider.example/v1
-LLM_API_KEY=replace-me
-LLM_MODEL=your-model-name
-
-EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
-RAG_TOP_K=5
-RAG_SCORE_THRESHOLD=0.45
-```
-
-注意事项：
-
-- 首次使用中文向量模型会下载较大权重，`model_cache` 卷用于复用缓存；离线环境应预先准备模型并固定版本。
-- Chroma 数据位于共享的 `/app/data/chroma`。启用向量化前应确认 worker 与 backend 使用相同的嵌入模型和切分版本。
-- 扫描件 OCR 需要在后端镜像中额外安装 PaddleOCR 及系统依赖，然后设置 `OCR_ENABLED=true`。未安装时不要仅修改开关。
-- 答案生成必须限定为检索片段，引用至少包含教材、章节、页码或片段 ID；证据不足时返回“不足以回答”，不能补写教材没有的结论。
-- 云端模型会把选中的片段发送给第三方。含未授权教材、未成年人个人信息或敏感数据时，应禁用外发，改用获批的本地模型。
-
-## 版权、隐私与安全边界
-
-- 平台不因“学习者上传”自动取得教材传播权。默认对象桶为私有，只向教材所属的学习者提供最小必要片段，不提供整本公开下载。
-- 网络题目导入必须记录来源、许可、采集时间和学习者确认状态；无法确认授权的内容不得进入个人题库。
-- 答题记录、薄弱知识点、学习画像可能构成个人信息。应支持访问控制、导出、更正、删除、保留期限和审计；涉及未成年人时还应提供适龄说明与监护支持。
-- 生产环境必须使用 HTTPS、独立强密钥、受限数据库网络、加密备份、恶意文件扫描、上传大小/类型校验、限流和日志脱敏。
-- 不把模型输出当作事实或最终学习评价。生成题、知识映射和主观题评分应进入学习者确认流程，并保存模型、提示词版本和证据。
-- `.env.example` 的账号与密码只是本地示例；共享部署前必须全部替换，且不应继续暴露 PostgreSQL、Redis、MinIO API 到公网。
-
-## 常见问题
-
-**端口已被占用**：修改 `.env` 中对应的 `*_PORT`，然后重新执行 `docker compose up -d`。
-
-**backend 一直不健康**：运行 `docker compose logs --tail=200 backend postgres`；优先检查 `DATABASE_URL` 与 `POSTGRES_*` 是否一致。密码含 `@`、`:`、`/` 等字符时，需要在 URL 中进行百分号编码。
-
-**worker 无法连接 Redis**：确认 `REDIS_PASSWORD`、`CELERY_BROKER_URL` 和 `CELERY_RESULT_BACKEND` 使用相同密码，并查看 `docker compose logs worker redis`。
-
-**前端出现 502**：确认 backend 已 healthy；Nginx 在容器网络中通过服务名 `backend:8000` 访问 API，不应改成 `localhost:8000`。
-
-**要重置本地环境**：先导出所需数据，再执行 `docker compose down --volumes --remove-orphans`。该操作会删除本项目的命名卷，无法通过 Compose 恢复。
-
-## 进一步阅读
-
-- [系统架构与关键设计](docs/ARCHITECTURE.md)
-- [分阶段实施路线图](docs/ROADMAP.md)
+本仓库的原创代码（含已发布的 0.2.0-test.4 和 0.2.0-test.5）采用 **GNU Affero General Public License v3.0（AGPL-3.0-only）**。第三方组件遵循其各自的许可证。学习者导入的教材和题目，其权利归各自权利人。[项目许可证](LICENSE) · [PyMuPDF 许可说明](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright)
